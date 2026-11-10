@@ -1,0 +1,128 @@
+:root {
+  color-scheme: light;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: #f5f5f5;
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.app-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 12px 20px;
+  background: #fff;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.app-header h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.app-subtitle {
+  font-size: 12px;
+  color: #8c8c8c;
+}
+
+.app-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.app-sider {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 96px;
+  min-width: 96px;
+  padding: 10px 6px;
+  background: #fff;
+  border-right: 1px solid #f0f0f0;
+}
+
+.sider-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 4px;
+  border-radius: 8px;
+  color: #595959;
+  text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.sider-item:hover {
+  background: #f0f7ff;
+  color: #1668dc;
+}
+
+.sider-item-active {
+  background: #e6f4ff;
+  color: #1668dc;
+  font-weight: 500;
+}
+
+.sider-icon {
+  font-size: 20px;
+  line-height: 24px;
+}
+
+.sider-label {
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.app-main {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 16px;
+  background: #fff;
+  margin: 12px;
+  border-radius: 8px;
+}
+
+.device-name {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+}
+
+.path-breadcrumb {
+  margin-bottom: 10px;
+}
+
+.crumb-link {
+  cursor: pointer;
+  color: #1677ff;
+}
+
+.crumb-link:hover {
+  color: #4096ff;
+}

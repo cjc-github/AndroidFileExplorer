@@ -1,0 +1,22 @@
+# AndroidFileExplorer
+
+# Python 运行产物
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Node / 前端
+node_modules/
+frontend/dist/
+
+# 运行时数据（SQLite 数据库、上传/下载暂存、拉取的文件）
+backend/data/
+
+# 日志
+logs/
+*.log
+
+# 系统杂物
+.DS_Store
+Thumbs.db

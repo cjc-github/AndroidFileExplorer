@@ -1,0 +1,359 @@
+# AndroidFileExplorer
+
+Android 设备文件资源 / 文件管理能力：**远程机器连接配置**、**设备资源管理**、**文件浏览**
+三个独立入口，加上设备发现、目录结构浏览、拉取上传、运行状态监控。
+
+本工程参考 `/home/test/tcl/frontend-api` + `/home/test/tcl/platform-api` 中已有的设备模块，
+但只保留**核心能力**（不含登录注册、测试目标、函数分析、运行调度等）。
+
+## 访问地址
+
+左侧竖排菜单三个入口：
+
+| 界面 | 地址 | 内容 |
+|---|---|---|
+| **远程机器连接配置** | http://192.168.114.128:10012/machines | 机器列表 / 新增 / 测试连接 / 删除 |
+| **设备资源管理** | http://192.168.114.128:10012/devices | 设备表 / 3 秒轮询 / 连接断开 / 浏览文件 |
+| **文件浏览**（选设备） | http://192.168.114.128:10012/files | 列出所有设备，点「浏览文件」进入 |
+| **文件浏览**（某设备） | http://192.168.114.128:10012/devices/{uid}/files | 目录 / 搜索 / 上传 / 拉取 |
+| 后端 API | http://192.168.114.128:8010/api/v1 | |
+| API 文档 | http://192.168.114.128:8010/docs | |
+
+两个服务都绑定 `0.0.0.0`，可从局域网内任意机器访问。
+
+```bash
+./scripts/start.sh          # 后台启动两个服务，日志在 ./logs/
+./scripts/start.sh stop     # 停止
+./scripts/dev.sh            # 前台启动（Ctrl+C 退出）
+```
+
+## 三个界面
+
+### 1. 远程机器连接配置 `/machines`
+
+管理挂载 ADB server 的机器：本机 + 远程 `agent_server`。
+
+| 功能 | 说明 |
+|---|---|
+| 机器列表 | 名称、地址、连接状态、设备数、最后探测时间、错误信息 |
+| 新增机器 | 登记后立即探测，失败会显示原因但**不回滚登记** |
+| 测试连接 | 现场探测该机器，返回探测到的设备数 |
+| 删除 | 删除机器及其设备记录；**本机不可删除** |
+
+一键接入远程机器：
+
+```bash
+./scripts/connect-remote-machine.sh 192.168.114.130 12345
+```
+
+### 2. 设备资源管理 `/devices`
+
+| 功能 | 说明 |
+|---|---|
+| 设备表 | **多选批量操作**（批量尝试/取消 root）、设备名（**可点击改名**）、**品牌**、序列号、**唯一标识 UID**、状态、**Root**（是/否）、**系统**（Android 版本 + API level + CPU 架构）、**CPU**（圆环）、**内存**（圆环 + 用量/总量）、最后在线、错误信息 |
+| 自动发现 | 首次加载自动从本机与已登记机器同步，不需要手点「同步」 |
+| 轮询 | 每 3 秒刷新一次运行状态（CPU / 内存 / load average） |
+| 生命周期 | 「连接」「断开」按唯一标识操作 |
+| 进入文件浏览 | 设备行内「浏览文件」按钮（第一列位置，主色描边） |
+
+#### 性能
+
+设备列表接口**同时返回指标**，不需要前端再逐台去拉：
+
+| 接口 | 耗时 |
+|---|---|
+| `GET /api/v1/devices` | 0.02s |
+| `GET /api/v1/devices?refresh=true` | 0.01s |
+| `GET /api/v1/devices/{uid}/metrics` | 0.02s |
+
+做到这一点靠三件事：
+
+1. **多机器并发同步** —— 机器之间互不依赖，串行会让请求等最慢的那台。
+2. **连接复用** —— 远程机器的 TCP 连接常驻，不再每次重新握手。
+3. **指标缓存（2.5s）** —— 轮询周期内不重复打设备；品牌只读一次。
+
+不可达的机器会被标记为「暂时不可用」并短期跳过，不再每次都等满超时。
+
+### 3. 文件浏览 `/files` → `/devices/{uid}/files`
+
+从左侧菜单「文件浏览」进入，**先选设备**再浏览：
+
+| 功能 | 说明 |
+|---|---|
+| 设备选择 | 列出所有设备，可按型号 / 序列号 / UID 过滤 |
+| **路径直达** | 路径框输入任意路径直接跳转，例如 `/data/local/tmp` |
+| **面包屑逐级回退** | `根目录 / data / local / tmp`，每一级都可点击跳转 |
+| 目录结构 | 权限 / 所属 / 修改时间 / 大小 |
+| 关键字搜索 | 递归搜索文件名；受保护目录自动跳过；并发列举 + 跳过 `/proc` `/sys` 等伪文件系统，全树搜索 6.2s → 0.6s |
+| **新建目录** | 在当前目录下创建目录（`mkdir -p`） |
+| **重命名** | 行内操作，可改名或移动到同级的其它名字 |
+| **删除** | 行内操作，删除目录时递归删除，操作前二次确认 |
+| 上传 | 上传到当前目录（multipart） |
+| 拉取 | 从设备拉取到服务端落地目录 |
+| 切换设备 | 文件页顶部「切换设备」返回选择页 |
+| **root 提权** | 未 root 时显示「尝试 root」；已 root 时显示「取消 root」，两者可来回切换 |
+
+#### 为什么需要路径直达
+
+Android 上 **父目录不可读、子目录可读** 是常态（未 root 的设备）：
+
+| 路径 | shell 用户 |
+|---|---|
+| `/data` | ❌ Permission denied |
+| `/data/local` | ❌ Permission denied |
+| `/data/local/tmp` | ✅ 可读 |
+
+如果只能靠逐级点击，用户在 `/` 点 `data` 就被 403 挡住，**永远到不了 `/data/local/tmp`**。
+所以路径框是必需品，不是锦上添花。
+
+#### 越权时的表现
+
+访问受保护目录时，页面顶部显示明确的告警，而不是空白页：
+
+```
+权限不足，无法访问该目录
+权限不足：无法访问 emulator-5554（ls: /data/: Permission denied）。
+该路径需要 root 权限，请使用已 root 的设备或以 su 身份访问。
+该路径需要 root 权限。可以直接在上方路径框输入更深层的可访问路径
+（例如 /data/local/tmp），或改用已 root 的设备。
+```
+
+路径级权限不足**不会**改写设备生命周期状态（设备仍是 `online`）。
+
+## 自包含架构
+
+本项目**不依赖任何外部仓库或组件**。远程机器上只需要 `python3` + `adb`，设备侧代理
+（agent）就在本项目里：
+
+```
+你的浏览器
+   ↓ http://192.168.114.128:10012
+前端 (vite dev :10012) ──代理 /api──▶ 后端 (FastAPI :8010)
+                                          ↓ MDD TCP 协议（本项目两端实现）
+                              192.168.114.130:18077  ← agent/agent.py（属于本项目）
+                                          ↓ 在该机本机执行 adb
+                                    Android 设备 emulator-5554
+```
+
+### 设备侧 agent
+
+| 文件 | 作用 |
+|---|---|
+| `agent/agent.py` | 设备侧代理，**只依赖 Python 标准库和 adb**，可单独拷到任意机器 |
+| `backend/scripts/deploy_agent.py` | 通过 MDD 通道把 agent 部署到远程机器并启动 |
+| `backend/scripts/stop_agent.py` | 停止远端 agent |
+| `scripts/install-agent.sh` | 一键：停旧版 → 部署 → 启动 → 自检 → 平台登记 |
+
+一键把一台远程机器接进来（该机器不再需要任何外部组件）：
+
+```bash
+./scripts/install-agent.sh 192.168.114.130 12345 18077
+
+# 启用认证（推荐）：agent 与平台两侧配置同一个密钥
+python3 agent/agent.py --host 0.0.0.0 --port 18077 --token <你的密钥>
+```
+
+agent 的协议（与平台端 `backend/app/transports/mdd_client.py` 一一对应）：
+
+| 请求 | 响应 |
+|---|---|
+| `adb devices -l` | `命令执行成功 (返回码: 0)` + `标准输出:` + `====` + `===END===` |
+| `PING` | `PONG` |
+| `SHUTDOWN` | agent 自行退出 |
+| `AUTH <token>` | 连接后的第一行：共享密钥认证（配置了密钥时必须先通过） |
+
+安全边界：
+
+- agent **只执行 adb 命令**，其它命令一律拒绝；
+- 启动时加 `--token <密钥>`（或环境变量 `AFE_AGENT_TOKEN`）即启用认证，未认证的连接在第一条命令前就会被断开；
+- 平台侧在 **远程机器连接配置** 里填写同一密钥（存每台机器自己的记录里），部署时用 `--token` 传入。
+
+### 设备唯一标识
+
+设备标识基于**设备自身的序列号**（`ro.serialno`），而不是「从哪台机器连过来的」：
+
+```
+uid = sha1("hw|" + ro.serialno)[:16]        # 设备报告了序列号
+uid = sha1("kind|endpoint|serial")[:16]      # 没报告时按机器 + serial
+```
+
+因此同一台手机即使通过两个 agent 被发现，在设备列表里**也只有一条记录**。
+
+
+### 部署设备侧 agent（自包含）
+
+远程机器上只需要 `python3` 和 `adb`：
+
+```bash
+# 在本项目目录执行（该机器需已开着旧的 agent 或 ssh 可达）
+./scripts/install-agent.sh <机器IP> <旧agent端口> <新agent端口>
+
+# 或者手动：把 agent/agent.py 拷过去运行
+python3 agent/agent.py --host 0.0.0.0 --port 18077
+```
+
+完成后在 **远程机器连接配置**页点「新增机器」，填该机器 IP 与 agent 端口。
+
+## 接入真实远程机器
+
+```bash
+./scripts/connect-remote-machine.sh <host> <port> [name]
+```
+
+脚本会：检查连通性 → 登记机器 → 探测 → 同步设备 → 若无设备则打印启动模拟器的命令。
+
+**关键**：远程机器上必须真的有设备在线。以 `192.168.114.130` 为例，它装了 Android SDK
+（`~/Android/Sdk`）、有 AVD `Pixel_6`、`/dev/kvm` 可用，但**模拟器默认不启动**：
+
+```bash
+cd ~/Android/Sdk/emulator
+nohup ./emulator -avd Pixel_6 -no-window -no-audio -no-boot-anim \
+    -gpu swiftshader_indirect > /tmp/emu.log 2>&1 &
+# 等 boot 完成再同步
+adb -s emulator-5554 shell getprop sys.boot_completed   # 期望 1
+```
+
+> boot 完成前设备会显示 `offline` 或短暂掉线，此时同步/上传会失败。
+
+## 需求对应
+
+| # | 需求 | 实现位置 |
+|---|---|---|
+| R1 | 获取本机 / 远程机器的 Android 设备并访问文件目录结构，需要 su 时报错 | `backend/app/transports/`（本机 adb / 远程 MDD 引擎）、`backend/app/api/routes/files.py` |
+| R2 | 拉取 / 上传数据 | `backend/app/services/transfer.py`、`routes/files.py`（pull / push / upload） |
+| R3 | 前台每隔几秒查询设备状态、CPU、内存 | `backend/app/services/metrics.py`、`routes/devices.py`，前端 `POLL_INTERVAL_MS = 3000` |
+| R4 | 每台机器绑定唯一标识并用它做生命周期操作 | `backend/app/services/registry.py`（`build_device_uid`）、`routes/devices.py`（connect / disconnect） |
+
+## 目录
+
+```
+AndroidFileExplorer/
+├── docs/
+│   ├── PLAN.md             实施计划（需求拆解 / 架构 / 里程碑 / 事故复盘）
+│   ├── FEATURES.md         功能点实现清单（勾选制，随交付更新）
+│   └── api-contract.md     HTTP 契约
+├── agent/                   设备侧代理（仅标准库 + adb，可单独部署）
+├── backend/                FastAPI + SQLModel
+│   ├── app/
+│   │   ├── transports/     base 抽象 + local_adb + mdd_client + remote_engine
+│   │   ├── services/       registry / file_service / metrics / transfer / transport_resolver
+│   │   ├── api/routes/     devices / files / engines
+│   │   └── main.py
+│   ├── scripts/            e2e_demo / live_server_check / render_check_with_device / real_device_check
+│   └── tests/              50 个 pytest 用例
+├── frontend/               Vite + React 19 + antd 5 + TanStack Query + TanStack Router
+│   └── src/
+│       ├── api/            类型 + 请求封装
+│       ├── layout/         AppLayout（竖排菜单：远程机器 / 设备资源 / 文件浏览）
+│       ├── pages/machines/ 远程机器连接配置
+│       ├── pages/devices/  设备资源管理
+│       ├── pages/files/    文件浏览（设备选择 + 目录浏览）
+│       └── router.tsx      四条路由
+└── scripts/
+    ├── start.sh            后台启动 / 停止
+    ├── dev.sh              前台启动
+    ├── verify.sh           完整验证门禁（6 步）
+    ├── render-check.sh     真实浏览器逐页渲染检查
+    ├── file-browser-check.sh/.mjs  文件浏览交互检查（CDP，零依赖）
+    ├── connect-remote-machine.sh   一键接入远程机器
+    └── install-agent.sh           一键部署设备侧 agent（自包含）
+```
+
+## 快速开始
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r backend/requirements.txt
+cd frontend && npm install && cd ..
+./scripts/start.sh
+```
+
+## 验证
+
+```bash
+./scripts/verify.sh
+```
+
+| 步骤 | 内容 | 通过标准 |
+|---|---|---|
+| 1 | 后端单元 + 集成测试（含 agent、认证、设备标识、文件操作、root 切换） | 124 passed |
+| 2 | 后端端到端（TestClient） | 全部通过 |
+| 3 | 后端端到端（真实 uvicorn + 真实 HTTP） | 全部通过 |
+| 4 | 前端类型检查 + 生产构建 | `tsc -b` + `vite build` 通过 |
+| 5 | **真实浏览器逐页渲染检查（4 页）** | 33 项断言全 PASS |
+| 6 | **文件浏览交互检查**（路径直达 / 面包屑 / 越权提示） | 11 项断言全 PASS |
+
+带设备场景另跑一轮（`backend/scripts/render_check_with_device.py`）：4 页 42 项断言全 PASS。
+
+第 6 步用 Chrome DevTools Protocol 直连（**零 npm 依赖**，不装 puppeteer），
+验证的是真实交互：填路径 → 跳转 → 点面包屑 → 看到权限告警。
+
+真实设备验收（需要一台开着 agent_server 的机器和在线设备）：
+
+```bash
+cd backend && ../.venv/bin/python scripts/real_device_check.py --host 192.168.114.130 --port 12345
+```
+
+### 第 5 步为什么不能省
+
+`vite build` 通过 **不等于** 页面能渲染。
+
+本工程曾出现：`react` 装成 19.2.8、`react-dom` 装成 19.2.7（`^19.2.0` 分别解析到不同版本），
+`npm run build` 全绿、TypeScript 全绿、curl 也能拿到 200 —— 但浏览器里 React 直接抛
+`Incompatible React versions`，页面一片空白。
+
+只有把页面放进真实浏览器、断言 `#root` 里有实际内容，才能发现这类问题。
+`scripts/render-check.sh` 用 `google-chrome --headless --dump-dom` 实现，零 npm 依赖。
+
+### root 提权
+
+未 root 的设备访问不了 `/data`、`/system` 等目录。文件浏览页提供「尝试 root」按钮：
+
+| 操作 | 接口 | 效果 |
+|---|---|---|
+| 尝试 root | `POST /api/v1/devices/{uid}/root` | `adb root` 重启 adbd，之后 shell 是 `uid=0(root)` |
+| 取消 root | `POST /api/v1/devices/{uid}/unroot` | `adb unroot` 恢复普通用户；界面上的按钮会自动切换 |
+
+设备的 root 状态由 `id` 命令实时探测，**显示在设备表里**（金色 `root` 标签）。
+生产版本设备会拒绝（`adbd cannot run as root in production builds`），此时接口返回 400 并说明原因。
+
+### 权限（su）行为
+
+设备上访问需要 root 的路径（`/system`、`/data` 等）时：
+
+- 后端返回 **403**，message 为 `Permission denied: /data/`;
+- 该路径的搜索会被**跳过**，其余路径的搜索照常返回；
+- **不会**因此把整台设备标记为异常 —— 路径权限是局部事实，不是设备生命周期事实。
+
+## 配置
+
+见 `backend/.env.example`。关键项：
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `SERVER_HOST` | 0.0.0.0 | API 绑定地址（改成 0.0.0.0 才能被外部访问） |
+| `SERVER_PORT` | 8010 | API 端口 |
+| `ADB_PATH` | adb | 本机 adb 可执行文件 |
+| `ENGINE_CONNECT_TIMEOUT` | 5 | 远程引擎连接超时（秒） |
+| `ENGINE_COMMAND_TIMEOUT` | 30 | 远程引擎命令超时（秒） |
+| `METRICS_INTERVAL_SECONDS` | 3 | 前端轮询间隔的默认参考值 |
+| `UPLOAD_DIR` / `DOWNLOAD_DIR` | ./data/... | 文件落地目录 |
+| `MAX_UPLOAD_BYTES` | 2GiB | 单次上传上限 |
+
+## 设计要点
+
+- **传输层抽象**：`Transport` 抽象屏蔽「本机 adb」与「远程 MDD 引擎」的差异，
+  上层服务（文件、指标、生命周期）完全一致。
+- **agent_server 报文包装**：真实 agent_server 会把结果包成
+  `命令执行成功 (返回码: 0) / 标准输出: / ====`，客户端必须剥离这层包装，
+  否则 `adb devices -l` 会被解析成一台名叫「命令执行成功」的假设备。
+- **toybox 兼容**：Android 的 toybox `ls` 没有 `-N` 选项，且对 symlink 参数
+  只会「描述链接」而非「列出内容」，因此命令固定为 `ls -la <path>/`（补尾斜杠）。
+- **唯一标识**：`uid = sha1(kind|endpoint|serial)[:16]`，跨重连稳定，跨机器不冲突。
+- **CPU 用差分**：`/proc/stat` 是累计值，用两次采样差分算使用率；**首次采样返回 null**，
+  不编造 0%。
+- **一次 shell 往返**：CPU / 内存 / load average / 品牌全部在一次采样里取回（品牌单独一次调用，
+  因为真机上 `getprop` 只有作为唯一命令时才能解析）。
+- **大文件不阻塞**：所有传输与文件 IO 都 `asyncio.to_thread` 卸载出事件循环。
+- **react / react-dom 锁死同版本**：`package.json` 用精确版本 + `overrides`，
+  避免 caret 分别解析出不同版本导致运行时白屏。
