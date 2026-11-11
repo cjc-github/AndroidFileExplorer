@@ -485,7 +485,7 @@ export function FileBrowserPage() {
 
       <Space.Compact style={{ width: "100%", marginBottom: 8 }}>
         <Input
-          style={{ width: 420 }}
+          style={{ width: 260 }}
           placeholder="直接输入路径，例如 /data/local/tmp"
           value={pathInput}
           onChange={(event) => setPathInput(event.target.value)}
@@ -610,6 +610,9 @@ export function FileBrowserPage() {
             selectedRowKeys: selectedKeys,
             onChange: (keys) => setSelectedKeys(keys),
             preserveSelectedRowKeys: false,
+            // Virtual tables default to a much wider selection column;
+            // a checkbox only needs 32px.
+            columnWidth: 32,
           }}
           dataSource={data?.items ?? []}
           columns={columns}
