@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.response import BaseResponse
 from app.db.session import get_session
 from app.logger import logger
+from app.models.device import EngineRecord
 from app.schemas.device import EngineCreate, EngineInfo
 from app.services.registry import DeviceRegistry
 from app.services.transport_resolver import TransportResolver
@@ -45,6 +47,21 @@ async def create_engine(
 ) -> BaseResponse[EngineInfo]:
     """Register a remote machine and probe whether its ADB server answers."""
     registry = DeviceRegistry(db)
+    duplicate = await db.execute(
+        select(EngineRecord).where(
+            EngineRecord.kind == payload.kind,
+            EngineRecord.host == payload.host,
+            EngineRecord.port == payload.port,
+        )
+    )
+    if duplicate.scalars().first() is not None:
+        # Two rows for one machine would also mean two transports for the
+        # same agent; the registry is keyed by machine, so refuse it early.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"该机器已登记: {payload.host}:{payload.port}（{payload.kind}）",
+        )
+
     engine = await registry.create_engine(
         name=payload.name,
         host=payload.host,

@@ -15,6 +15,11 @@ engine = create_async_engine(
     settings.database_url,
     echo=False,
     future=True,
+    # sqlite3.connect(timeout=...) is the busy timeout: a contending writer
+    # waits up to 10s for the lock instead of failing with "database is
+    # locked" immediately.  WAL mode is set once in init_db (it is a
+    # persistent per-database property).
+    connect_args={"timeout": 10.0} if settings.database_url.startswith("sqlite") else {},
 )
 
 async_session_maker = async_sessionmaker(
@@ -103,8 +108,80 @@ async def _migrate_columns() -> None:
                 )
 
 
+async def _dedupe_engines(connection) -> None:
+    """Delete duplicate engine rows (same kind/host/port), keep the oldest.
+
+    Older deployments could register the same machine twice; the unique
+    index created afterwards would refuse to build over such duplicates.
+    Devices stay attached: their engine_id is repointed at the survivor.
+    """
+    rows = (
+        await connection.execute(text("SELECT id, kind, host, port FROM engines ORDER BY id"))
+    ).fetchall()
+    if not rows:
+        return
+    kept: dict[tuple[str, str, int], int] = {}
+    for engine_id, kind, host, port in rows:
+        key = (str(kind or ""), str(host or ""), int(port or 0))
+        survivor = kept.get(key)
+        if survivor is None:
+            kept[key] = engine_id
+            continue
+        await connection.execute(
+            text("UPDATE devices SET engine_id = :keep WHERE engine_id = :dup"),
+            {"keep": survivor, "dup": engine_id},
+        )
+        await connection.execute(
+            text("DELETE FROM engines WHERE id = :id"), {"id": engine_id}
+        )
+        logger.info(f"Deduplicated engine rows for {host}:{port} (kept id={survivor})")
+
+
+async def _create_engine_unique_index(connection) -> None:
+    """Enforce one row per machine across restarts and old databases.
+
+    The API rejects duplicates too; the index is the backstop that holds
+    even when rows are written by an older build or directly.
+    """
+    try:
+        await connection.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ux_engines_kind_host_port "
+                "ON engines(kind, host, port)"
+            )
+        )
+    except Exception as exc:  # noqa: BLE001 - never block the startup here
+        logger.warning(f"could not create the engines unique index: {exc}")
+
+
+async def _enable_wal() -> None:
+    """Turn on WAL mode for the SQLite database file (once, at startup).
+
+    WAL lets the concurrent per-machine sync tasks write while readers are
+    active instead of failing with "database is locked".  It is a persistent
+    per-database property, so setting it here covers every later connection.
+
+    The pragma must run outside a transaction ("cannot change into wal mode
+    from within a transaction"), hence the AUTOCOMMIT connection.
+    """
+    if not settings.database_url.startswith("sqlite"):
+        return
+    async with engine.connect() as connection:
+        autocommit = await connection.execution_options(isolation_level="AUTOCOMMIT")
+        result = await autocommit.execute(text("PRAGMA journal_mode=WAL"))
+        value = str(result.scalar() or "").lower()
+    if value == "wal":
+        logger.info("SQLite journal mode set to WAL")
+    else:
+        logger.warning(f"SQLite journal mode is {value!r} (WAL not applied)")
+
+
 async def init_db() -> None:
     """Create the tables if they do not exist and align their columns."""
+    await _enable_wal()
     async with engine.begin() as connection:
         await connection.run_sync(SQLModel.metadata.create_all)
     await _migrate_columns()
+    async with engine.begin() as connection:
+        await _dedupe_engines(connection)
+        await _create_engine_unique_index(connection)

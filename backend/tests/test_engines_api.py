@@ -143,3 +143,13 @@ def test_machine_payload_validation(client):
         "/api/v1/engines", json={"name": "x", "host": "", "port": 12345, "kind": "remote"}
     )
     assert response.status_code == 422
+
+
+def test_registering_the_same_machine_twice_is_rejected(client):
+    """One machine must not end up with two registry rows / transports."""
+    payload = {"name": "虚拟机", "host": "192.168.114.130", "port": 12345, "kind": "remote"}
+    assert client.post("/api/v1/engines", json=payload).status_code == 200
+
+    response = client.post("/api/v1/engines", json=payload)
+    assert response.status_code == 400
+    assert "已登记" in response.json()["detail"]
