@@ -9,6 +9,8 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.auth import AuthTokenMiddleware
+from app.api.request_id import RequestIdMiddleware
 from app.api.routes import devices, engines, files
 from app.api.routes import settings as settings_routes
 from app.config import settings
@@ -93,6 +95,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Middleware order matters: the LAST added runs OUTERMOST.  CORS must see
+# the requests first, because a browser preflight (OPTIONS) never carries
+# the Authorization header and would be rejected by the auth check - and it
+# must also add its headers to every answer, including a 401.
+# The request id sits between CORS and the auth check: the auth middleware
+# answers a 401 on its own, without reaching the inner stack, so a request
+# id placed inside it would never stamp the rejected request.
+app.add_middleware(AuthTokenMiddleware, token=settings.api_auth_token)
+app.add_middleware(RequestIdMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

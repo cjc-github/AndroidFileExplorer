@@ -69,6 +69,14 @@ class Settings:
     staging_max_age_hours: int = _int_env("STAGING_MAX_AGE_HOURS", 24)
     """Staged upload/download files older than this are swept (0 = keep)."""
 
+    api_auth_token: str = os.getenv("API_AUTH_TOKEN", "")
+    """Optional bearer token for the API; empty (default) disables auth.
+
+    With a token configured every ``/api/v1`` request (except the health
+    probe) must carry ``Authorization: Bearer <token>``; the download anchor
+    may pass the token as a ``?token=`` query parameter instead.
+    """
+
     @property
     def database_url(self) -> str:
         override = os.getenv("DATABASE_URL")
