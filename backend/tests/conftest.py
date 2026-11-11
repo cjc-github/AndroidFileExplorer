@@ -72,7 +72,11 @@ class FakeTransport(Transport):
 
     async def pull(self, serial: str, device_path: str, local_path: str) -> TransferResult:
         self.pulled.append((device_path, local_path))
-        return TransferResult(ok=True, path=device_path, size=10, stored_at=local_path)
+        # The real transports leave the file on disk; the download route
+        # relies on that, so the fake does the same.
+        payload = f"fake content of {device_path}".encode()
+        Path(local_path).write_bytes(payload)
+        return TransferResult(ok=True, path=device_path, size=len(payload), stored_at=local_path)
 
     async def push(self, serial: str, local_path: str, device_path: str) -> TransferResult:
         self.pushed.append((local_path, device_path))

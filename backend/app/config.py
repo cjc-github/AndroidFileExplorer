@@ -66,6 +66,8 @@ class Settings:
     upload_dir: Path = _path_env("UPLOAD_DIR", DATA_DIR / "uploads")
     download_dir: Path = _path_env("DOWNLOAD_DIR", DATA_DIR / "downloads")
     max_upload_bytes: int = _int_env("MAX_UPLOAD_BYTES", 2 * 1024 * 1024 * 1024)
+    staging_max_age_hours: int = _int_env("STAGING_MAX_AGE_HOURS", 24)
+    """Staged upload/download files older than this are swept (0 = keep)."""
 
     @property
     def database_url(self) -> str:

@@ -14,11 +14,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 
+from app.config import settings
 from app.db import session as db_session
 from app.main import app
 from app.services.registry import build_device_uid
 from app.state import get_transport_resolver
-from app.transports.base import DeviceEntry, FileEntry
+from app.transports.base import DeviceEntry, FileEntry, TransferResult
 
 from .conftest import FakeTransport
 
@@ -46,6 +47,11 @@ def run_sync(coro):
 def client(tmp_path, monkeypatch):
     """A TestClient whose transport and database are fakes."""
     monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'test.db'}")
+    # Staging directories live in tmp as well, so transfers of the tests
+    # never touch the real backend/data folder.
+    monkeypatch.setattr(settings, "download_dir", tmp_path / "downloads")
+    monkeypatch.setattr(settings, "upload_dir", tmp_path / "uploads")
+    monkeypatch.setattr(settings, "staging_max_age_hours", 0)
 
     transport = FakeTransport(
         endpoint="local:127.0.0.1:5037",
@@ -184,6 +190,33 @@ def test_pull_and_push_round_trip(client, tmp_path):
     assert response.status_code == 200
     assert response.json()["data"]["ok"] is True
     assert transport.pushed[-1][1] == "/sdcard/uploaded.bin"
+
+
+def test_download_streams_the_device_file(client):
+    uid = _seed_device(client)
+    response = client.get(
+        f"/api/v1/devices/{uid}/files/download", params={"path": "/sdcard/hello.txt"}
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/octet-stream"
+    assert "hello.txt" in response.headers["content-disposition"]
+    assert b"fake content of /sdcard/hello.txt" in response.content
+
+
+def test_download_404s_when_the_staging_file_never_landed(client, monkeypatch):
+    """A transport that reports success without leaving the file is a miss."""
+    uid = _seed_device(client)
+
+    async def _pull_without_file(self, serial, device_path, local_path):
+        self.pulled.append((device_path, local_path))
+        return TransferResult(ok=True, path=device_path, size=0, stored_at=local_path)
+
+    monkeypatch.setattr(FakeTransport, "pull", _pull_without_file)
+    response = client.get(
+        f"/api/v1/devices/{uid}/files/download", params={"path": "/sdcard/hello.txt"}
+    )
+    assert response.status_code == 404
+    assert "文件未落在" in response.json()["detail"]
 
 
 def test_connect_and_disconnect_are_lifecycle_operations(client):

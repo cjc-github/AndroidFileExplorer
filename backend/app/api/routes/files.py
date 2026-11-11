@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, File as FormFile, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.response import BaseResponse
 from app.db.session import get_session
 from app.logger import logger
@@ -197,7 +200,7 @@ async def download_file(
     name = normalized.rsplit("/", 1)[-1] or "download.bin"
 
     try:
-        await service.pull(record.serial, normalized)
+        result = await service.pull(record.serial, normalized)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except PermissionDeniedError as exc:
@@ -211,11 +214,12 @@ async def download_file(
             ) from exc
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=message) from exc
 
-    staged = service.download_dir / name
-    if not staged.is_file():
+    # The staging file carries a unique name; pull reports it in stored_at.
+    staged = Path(result.stored_at) if result.stored_at else None
+    if staged is None or not staged.is_file():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"文件未落在服务器下载目录：{staged}",
+            detail=f"文件未落在服务器下载目录：{result.stored_at or name}",
         )
     logger.info(f"download {normalized} -> browser as {name}")
     return FileResponse(staged, filename=name, media_type="application/octet-stream")
@@ -361,24 +365,31 @@ async def upload_file(
 ) -> BaseResponse[TransferInfo]:
     """Receive a multipart file and push it onto the device."""
     record, transport = await _resolve_device(uid, db, resolver)
-    content = await file.read()
     service = TransferService(transport)
+    staged: Path | None = None
     try:
-        staged = service.stage_upload(file.filename or "upload.bin", content)
-    except OSError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"保存上传文件失败: {exc}"
-        ) from exc
-
-    try:
+        # Stream the body to disk in chunks: buffering a 2 GiB upload in
+        # memory would OOM the server, and the size limit aborts the copy.
+        staged = await service.stage_upload_stream(
+            file.filename or "upload.bin",
+            file.file,
+            max_bytes=settings.max_upload_bytes,
+        )
         result = await service.push(record.serial, str(staged), device_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except PermissionDeniedError as exc:
         logger.warning(f"upload permission denied on {uid}: {exc}")
         raise _permission_error(device_path, str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except TransportError as exc:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    finally:
+        # The staged copy was pushed (or the push failed): never leave it behind.
+        if staged is not None:
+            try:
+                staged.unlink()
+            except OSError:
+                pass
 
     logger.info(f"upload {file.filename} -> {device_path} on {uid}")
     return BaseResponse.success(
