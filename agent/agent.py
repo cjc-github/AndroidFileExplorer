@@ -26,9 +26,9 @@ A request is one line; the answer is the envelope below followed by the
 A failing command uses ``命令执行失败`` and the ``错误信息:`` section instead.
 
 Only ``adb ...`` commands are accepted - the agent is a device bridge, not a
-general purpose shell.  File transfer is not part of the agent: the platform
-copies files with ``adb push`` / ``adb pull`` itself, which keeps the agent
-small and avoids buffering large payloads.
+general purpose shell.  File transfer speaks a small binary protocol
+(``FILE_PUSH`` / ``FILE_PULL``) and streams the payload in chunks, so a
+multi-gigabyte pull never lands in the agent's memory at once.
 """
 
 from __future__ import annotations
@@ -56,6 +56,10 @@ DEFAULT_PORT = 12345
 DEFAULT_ADB = "adb"
 COMMAND_TIMEOUT = 120.0
 MAX_OUTPUT = 512 * 1024
+DEFAULT_ADB_CONCURRENCY = 8
+#: FILE_PULL streams the pulled file back in chunks of this size instead of
+#: buffering the whole payload in memory.
+PULL_CHUNK_SIZE = 1024 * 1024
 
 #: Same whitelist as the platform: `adb push`/`adb pull` arguments must not
 #: carry shell metacharacters, and serials are limited to a strict charset.
@@ -136,12 +140,23 @@ def _resolve_adb(explicit: str | None) -> str:
 
 
 class CommandRunner:
-    """Runs adb commands on behalf of the connected clients."""
+    """Runs adb commands on behalf of the connected clients.
 
-    def __init__(self, adb_path: str, adb_server: tuple[str, int] | None = None) -> None:
+    adb can run several commands at once (one process per command), so the
+    runner does NOT serialize everything behind one lock any more - commands
+    for different devices overlap.  A semaphore caps how many adb processes
+    run at the same time so a burst of clients cannot explode the machine.
+    """
+
+    def __init__(
+        self,
+        adb_path: str,
+        adb_server: tuple[str, int] | None = None,
+        max_concurrency: int = DEFAULT_ADB_CONCURRENCY,
+    ) -> None:
         self.adb_path = adb_path
         self.adb_server = adb_server
-        self._lock = threading.Lock()
+        self._adb_slots = threading.BoundedSemaphore(max(1, max_concurrency))
 
     def wait_for_device(self, serial: str | None, timeout: float = 30.0) -> bool:
         """Wait until the device shows up again.
@@ -181,7 +196,7 @@ class CommandRunner:
 
     def run_argv(self, argv: list[str], timeout: float = COMMAND_TIMEOUT) -> CommandResult:
         """Run one adb command from an argument list (never through a shell)."""
-        with self._lock:
+        with self._adb_slots:
             try:
                 completed = subprocess.run(
                     [self.adb_path, *argv],
@@ -222,7 +237,7 @@ class CommandRunner:
             return CommandResult(1, "", f"只允许 adb 命令，收到: {command}")
 
         argv = [self.adb_path, *parts[1:]]
-        with self._lock:
+        with self._adb_slots:
             try:
                 completed = subprocess.run(
                     argv,
@@ -406,14 +421,26 @@ class AgentHandler(socketserver.StreamRequestHandler):
 
             size = os.path.getsize(target)
             name = remote_path.rsplit("/", 1)[-1] or "download.bin"
+            # The md5 travels in the header that precedes the bytes, so the
+            # digest needs one streaming pass before the payload is sent.
+            # Both passes read fixed size chunks: the payload is never fully
+            # buffered in memory.
             digest = hashlib.md5()
             with open(target, "rb") as handle:
-                digest_data = handle.read()
-            digest.update(digest_data)
+                while True:
+                    chunk = handle.read(PULL_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    digest.update(chunk)
 
             self.wfile.write(f"FILE_INFO:FILE:{name}\n".encode())
             self.wfile.write(f"FILE_DATA:{name}:{size}:{digest.hexdigest()}\n".encode())
-            self.wfile.write(digest_data)
+            with open(target, "rb") as handle:
+                while True:
+                    chunk = handle.read(PULL_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
             self.wfile.flush()
             return b""
 
@@ -431,8 +458,13 @@ def build_server(
     adb_path: str | None = None,
     adb_server: tuple[str, int] | None = None,
     token: str | None = None,
+    max_concurrency: int = DEFAULT_ADB_CONCURRENCY,
 ) -> AgentServer:
-    runner = CommandRunner(_resolve_adb(adb_path), adb_server)
+    runner = CommandRunner(
+        _resolve_adb(adb_path),
+        adb_server,
+        max_concurrency=max_concurrency,
+    )
     handler = type(
         "BoundAgentHandler", (AgentHandler,), {"runner": runner, "token": token}
     )
@@ -450,6 +482,12 @@ def main(argv: list[str] | None = None) -> int:
         "--adb-server",
         default=None,
         help="远端 adb server，形如 host:port（默认用本机 adb server）",
+    )
+    parser.add_argument(
+        "--max-concurrent",
+        type=int,
+        default=int(os.getenv("AFE_ADB_MAX_CONCURRENT", DEFAULT_ADB_CONCURRENCY)),
+        help="同时运行的 adb 进程上限（默认 8，可用 AFE_ADB_MAX_CONCURRENT）",
     )
     parser.add_argument(
         "--token",
@@ -480,7 +518,9 @@ def main(argv: list[str] | None = None) -> int:
         LOGGER.info("agent authentication is enabled")
 
     try:
-        server = build_server(args.host, args.port, args.adb, adb_server, token)
+        server = build_server(
+            args.host, args.port, args.adb, adb_server, token, args.max_concurrent
+        )
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1

@@ -62,6 +62,11 @@ class MddClient:
         self.command_timeout = command_timeout
         self.token = token
         self._socket: socket.socket | None = None
+        # Bytes read from the socket but not yet consumed by the protocol
+        # reader (TCP delivers coalesced chunks; a naive recv(1) loop costs
+        # one syscall per byte and a fixed recv(n) can swallow follow-up
+        # protocol data).
+        self._recv_buffer = bytearray()
 
     # ------------------------------------------------------------------ socket
 
@@ -77,18 +82,20 @@ class MddClient:
             raise MddConnectionError(f"连接引擎失败: {exc}") from exc
         sock.settimeout(self.command_timeout)
         self._socket = sock
+        self._recv_buffer = bytearray()
         if self.token:
             self._authenticate(sock)
 
     def _authenticate(self, sock: socket.socket) -> None:
         """Send the shared secret and check the answer."""
         sock.sendall(f"AUTH {self.token}\n".encode())
-        answer = sock.recv(256).decode(errors="replace").strip()
+        answer = self._read_line()
         if not answer.startswith("OK"):
             try:
                 sock.close()
             finally:
                 self._socket = None
+                self._recv_buffer = bytearray()
             raise MddConnectionError(f"agent 认证失败: {answer}")
 
     def close(self) -> None:
@@ -98,6 +105,7 @@ class MddClient:
                 self._socket.close()
             finally:
                 self._socket = None
+                self._recv_buffer = bytearray()
 
     def __enter__(self) -> "MddClient":
         self.connect()
@@ -111,30 +119,39 @@ class MddClient:
             raise MddConnectionError("引擎未连接")
         return self._socket
 
+    def _recv_into_buffer(self) -> None:
+        """Pull one chunk of data from the socket into the receive buffer."""
+        chunk = self._require_socket().recv(DEFAULT_BUFFER_SIZE)
+        if not chunk:
+            raise MddConnectionError("连接在读取响应前关闭")
+        self._recv_buffer.extend(chunk)
+
     def _read_line(self) -> str:
-        sock = self._require_socket()
-        buffer = b""
         while True:
-            chunk = sock.recv(1)
-            if not chunk:
-                raise MddConnectionError("连接在读取响应前关闭")
-            buffer += chunk
-            if chunk == b"\n":
-                break
-        return buffer.decode(errors="replace").strip()
+            newline = self._recv_buffer.find(b"\n")
+            if newline != -1:
+                line = self._recv_buffer[:newline]
+                del self._recv_buffer[: newline + 1]
+                return line.decode(errors="replace").strip()
+            self._recv_into_buffer()
+
+    def _read_exact(self, size: int) -> bytes:
+        """Consume exactly ``size`` bytes (buffer first, socket when short)."""
+        while len(self._recv_buffer) < size:
+            self._recv_into_buffer()
+        data = bytes(self._recv_buffer[:size])
+        del self._recv_buffer[:size]
+        return data
 
     def _read_until_end(self) -> str:
-        sock = self._require_socket()
-        buffer = b""
-        while True:
-            chunk = sock.recv(8192)
-            if not chunk:
-                raise MddConnectionError("连接在读取响应前关闭")
-            buffer += chunk
-            if END_MARKER.encode() in buffer:
-                break
-        text = buffer.decode(errors="replace")
-        return text.replace(END_MARKER, "").strip()
+        marker = END_MARKER.encode()
+        while marker not in self._recv_buffer:
+            self._recv_into_buffer()
+        index = self._recv_buffer.find(marker)
+        text = self._recv_buffer[:index].decode(errors="replace")
+        # Anything after the marker stays buffered for the next read.
+        del self._recv_buffer[: index + len(marker)]
+        return text.strip()
 
     # ----------------------------------------------------------------- command
 
@@ -270,9 +287,7 @@ class MddClient:
             received = 0
             with open(local_path, "wb") as handle:
                 while received < file_size_int:
-                    chunk = sock.recv(min(DEFAULT_BUFFER_SIZE, file_size_int - received))
-                    if not chunk:
-                        raise MddConnectionError("拉取过程中连接关闭")
+                    chunk = self._read_exact(min(DEFAULT_BUFFER_SIZE, file_size_int - received))
                     handle.write(chunk)
                     digest.update(chunk)
                     received += len(chunk)

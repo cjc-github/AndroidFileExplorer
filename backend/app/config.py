@@ -56,6 +56,8 @@ class Settings:
 
     engine_connect_timeout: float = _float_env("ENGINE_CONNECT_TIMEOUT", 5.0)
     engine_command_timeout: float = _float_env("ENGINE_COMMAND_TIMEOUT", 30.0)
+    remote_pool_size: int = _int_env("REMOTE_ENGINE_POOL_SIZE", 4)
+    """Concurrent MDD command connections kept per remote machine."""
 
     device_offline_threshold: int = _int_env("DEVICE_OFFLINE_THRESHOLD", 2)
     metrics_interval_seconds: int = _int_env("METRICS_INTERVAL_SECONDS", 3)
