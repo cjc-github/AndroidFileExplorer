@@ -98,16 +98,24 @@ _UNAUTHORIZED_MARKERS = (
     "unauthorized",
 )
 
+# Only unambiguous offline signals.  Broad substrings such as "not found"
+# or "closed" also matched harmless messages (a shell answering
+# "sh: missing-tool: not found", an unrelated log line) and misclassified
+# a healthy device as offline.
 _OFFLINE_MARKERS = (
     "device offline",
-    "device not found",
     "no devices/emulators found",
-    "device offline.",
-    "not found",
-    "closed",
     "connection reset",
+    "connection closed",
     "broken pipe",
+    "cannot connect to daemon",
 )
+
+#: adb reports a vanished device as ``error: device 'emulator-5554' not
+#: found`` - the serial sits between the two words, so a plain "device not
+#: found" marker never matches it.  The pattern below catches the device
+#: form while leaving a shell's "sh: tool: not found" alone.
+_OFFLINE_DEVICE_GONE = re.compile(r"device\s+'[^']*'\s+not found")
 
 #: How long one ``id`` probe result is trusted.  The root flag only changes
 #: when adbd restarts (``adb root`` / ``adb unroot``), while the foreground
@@ -219,6 +227,8 @@ def classify_output(output: str) -> TransportError | None:
         return DeviceUnauthorizedError(output.strip() or "device unauthorized")
     if any(marker in lowered for marker in _OFFLINE_MARKERS):
         return DeviceOfflineError(output.strip() or "device offline")
+    if _OFFLINE_DEVICE_GONE.search(lowered):
+        return DeviceOfflineError(output.strip() or "device not found")
     return None
 
 
@@ -312,6 +322,57 @@ def path_parts(path: str) -> list[tuple[str, str]]:
 
 _SIZE_RE = re.compile(r"^\s*(\d+)\s*$")
 
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_MONTH_FIELDS = frozenset(
+    {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
+)
+
+
+def _parse_ls_datetime(fields: list[str]) -> datetime | None:
+    """Parse the date fields of one ``ls -l`` row.
+
+    Three dialects exist in the wild:
+
+    * toybox (Android): ``2024-01-01 12:00`` - two fields.
+    * toybox for files older than ~6 months: ``2024-01-01`` - one field, the
+      time is omitted.
+    * busybox: ``Jan  1 12:00`` / ``Jan  1  2024`` - three fields after
+      ``split()`` collapsed the padding; a missing year is completed with
+      the current one.
+
+    Returns ``None`` for layouts it does not recognize: the modification
+    time is optional in the UI, so an unparsable date must not break the
+    listing.
+    """
+    if len(fields) >= 2 and _ISO_DATE_RE.match(fields[0]):
+        try:
+            return datetime.strptime(f"{fields[0]} {fields[1]}", "%Y-%m-%d %H:%M")
+        except ValueError:
+            # A time with seconds ("12:00:00") is not the toybox default,
+            # but it is still a date we can show.
+            try:
+                return datetime.strptime(
+                    f"{fields[0]} {fields[1]}", "%Y-%m-%d %H:%M:%S"
+                )
+            except ValueError:
+                return None
+    if len(fields) >= 1 and _ISO_DATE_RE.match(fields[0]):
+        # Date only (toybox drops the time for old files).
+        try:
+            return datetime.strptime(fields[0], "%Y-%m-%d")
+        except ValueError:
+            return None
+    if len(fields) >= 3 and fields[0] in _MONTH_FIELDS:
+        for pattern, has_year in (("%b %d %H:%M", False), ("%b %d %Y", True)):
+            try:
+                parsed = datetime.strptime(
+                    f"{fields[0]} {fields[1]} {fields[2]}", pattern
+                )
+            except ValueError:
+                continue
+            return parsed if has_year else parsed.replace(year=datetime.now().year)
+    return None
+
 
 def _is_root_identity(output: str) -> bool:
     """True when an ``id`` output shows uid 0 (root)."""
@@ -352,7 +413,25 @@ def parse_long_listing(output: str, base_path: str) -> list[FileEntry]:
         is_link = permissions[0] == "l"
 
         # Layout: perms links owner group size date time name...
-        # The name column starts after 7 fixed fields (perms, links, owner,
+        # toybox puts an ISO date at 5 and the time at 6; busybox puts the
+        # month at 5, the day at 6 and the time (or the year) at 7, which
+        # shifts the name column.  toybox omits the time for old files, so
+        # the name column shifts back to 6 there.  Parse what is
+        # recognizable, never guess.
+        modified_at: datetime | None = None
+        name_column = 7
+        if len(parts) >= 7 and _ISO_DATE_RE.match(parts[5]):
+            # The time is present when there are at least 8 columns.
+            if len(parts) >= 8 and not _ISO_DATE_RE.match(parts[6]):
+                modified_at = _parse_ls_datetime(parts[5:7])
+            else:
+                modified_at = _parse_ls_datetime(parts[5:6])
+                name_column = 6
+        elif len(parts) >= 9 and parts[5] in _MONTH_FIELDS:
+            modified_at = _parse_ls_datetime(parts[5:8])
+            name_column = 8
+
+        # The name column starts after the fixed fields (perms, links, owner,
         # group, size, date, time); everything after it belongs to the name.
         size: int | None = None
         try:
@@ -363,10 +442,9 @@ def parse_long_listing(output: str, base_path: str) -> list[FileEntry]:
         owner = parts[2] if len(parts) > 2 else None
         group = parts[3] if len(parts) > 3 else None
 
-        NAME_COLUMN = 7
-        if len(parts) <= NAME_COLUMN:
+        if len(parts) <= name_column:
             continue
-        name_parts = parts[NAME_COLUMN:]
+        name_parts = parts[name_column:]
         if not name_parts:
             continue
         name = " ".join(name_parts)
@@ -383,6 +461,7 @@ def parse_long_listing(output: str, base_path: str) -> list[FileEntry]:
                 path=join_device_path(base_path, name),
                 is_dir=is_dir,
                 size=size,
+                modified_at=modified_at,
                 permissions=permissions,
                 owner=owner,
                 group=group,
