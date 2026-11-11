@@ -62,6 +62,12 @@ class DeviceRecord(SQLModel, table=True):
     model: str | None = Field(default=None, max_length=200)
     brand: str | None = Field(default=None, max_length=100)
     cpu_abi: str | None = Field(default=None, max_length=100)
+    cpu_cores: int | None = Field(default=None)
+    """Core count from /proc/cpuinfo."""
+    cpu_max_freq_khz: int | None = Field(default=None)
+    """Highest per-core maximum frequency in kHz (cpufreq sysfs)."""
+    board_platform: str | None = Field(default=None, max_length=100)
+    """SoC / board platform, from ro.board.platform."""
     """The CPU architecture, from ro.product.cpu.abi (e.g. arm64-v8a)."""
     android_version: str | None = Field(default=None, max_length=40)
     """The Android version string, from ro.build.version.release."""

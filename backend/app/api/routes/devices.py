@@ -210,7 +210,11 @@ async def _device_with_metrics(
         # The CPU architecture and the Android version are static device
         # properties too: read them once (the transport caches per device)
         # and persist, so the device table can show them.
-        if device.cpu_abi is None or device.android_version is None:
+        if (
+            device.cpu_abi is None
+            or device.android_version is None
+            or device.board_platform is None
+        ):
             props_fetch = getattr(transport, "device_props", None)
             if props_fetch is not None:
                 try:
@@ -221,7 +225,23 @@ async def _device_with_metrics(
                     device.cpu_abi = props.get("ro.product.cpu.abi")
                     device.android_version = props.get("ro.build.version.release")
                     device.api_level = props.get("ro.build.version.sdk")
+                    device.board_platform = props.get("ro.board.platform")
                     device.updated_at = datetime.utcnow()
+
+        # The CPU hardware facts (core count, max frequency) are static too:
+        # read them once (the transport caches per device) and persist.
+        if not device.cpu_cores or not device.cpu_max_freq_khz:
+            cpu_fetch = getattr(transport, "cpu_hardware_info", None)
+            if cpu_fetch is not None:
+                try:
+                    cores, max_freq = await cpu_fetch(device.serial)
+                except TransportError:
+                    cores, max_freq = None, None
+                # Assign unconditionally: a None result (fake cpufreq on
+                # emulators) must OVERWRITE a garbage 0 left by the migration.
+                device.cpu_cores = cores
+                device.cpu_max_freq_khz = max_freq
+                device.updated_at = datetime.utcnow()
 
         # Whether the device shell runs as root changes only when adbd is
         # restarted, so it is refreshed together with the metrics.

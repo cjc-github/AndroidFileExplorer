@@ -40,6 +40,11 @@ def _default_for(column) -> str:
     python_type = getattr(column, "type", None)
     type_name = type(python_type).__name__.lower() if python_type else ""
 
+    # A nullable column must stay NULL for the existing rows: a fake 0 would
+    # look like a collected value and block the lazy back-fill forever.
+    if column.nullable:
+        return "NULL"
+
     default = getattr(column, "default", None)
     if default is not None and getattr(default, "is_scalar", False):
         value = default.arg

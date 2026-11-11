@@ -88,6 +88,9 @@ class DeviceInfo(BaseModel):
     model: str | None = None
     brand: str | None = None
     cpu_abi: str | None = None
+    cpu_cores: int | None = None
+    cpu_max_freq_khz: int | None = None
+    board_platform: str | None = None
     android_version: str | None = None
     api_level: str | None = None
     product: str | None = None

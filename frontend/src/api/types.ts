@@ -31,6 +31,9 @@ export interface Device {
   model: string | null;
   brand: string | null;
   cpu_abi: string | null;
+  cpu_cores: number | null;
+  cpu_max_freq_khz: number | null;
+  board_platform: string | null;
   android_version: string | null;
   api_level: string | null;
   product: string | null;

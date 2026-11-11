@@ -81,6 +81,7 @@ PROPERTY_KEYS = (
     "ro.product.cpu.abi",
     "ro.build.version.release",
     "ro.build.version.sdk",
+    "ro.board.platform",
 )
 
 _PERMISSION_MARKERS = (
@@ -805,6 +806,62 @@ class Transport(ABC):
 
         cache[serial] = props
         return props
+
+    def _cpu_info_cache(self) -> dict[str, tuple[int | None, int | None]]:
+        """Cache of the CPU hardware facts per serial (they never change)."""
+        cache = getattr(self, "_cpu_facts_cache", None)
+        if cache is None:
+            cache = {}
+            self._cpu_facts_cache = cache
+        return cache
+
+    async def cpu_hardware_info(
+        self, serial: str
+    ) -> tuple[int | None, int | None]:
+        """Return (core count, max frequency in kHz) of the device.
+
+        Both are static hardware facts: /proc/cpuinfo counts the cores (the
+        `processor` line exists on ARM and x86 alike) and the cpufreq sysfs
+        holds the per-core maximum frequency in kHz - the glob is expanded by
+        the DEVICE shell, so no quoting gymnastics are needed.  Cached per
+        device; a missing value stays None and the UI renders a dash.
+        """
+        cache = self._cpu_info_cache()
+        cached = cache.get(serial)
+        if cached is not None:
+            return cached
+
+        cores: int | None = None
+        max_freq: int | None = None
+        try:
+            cpuinfo = await self.shell(serial, "cat /proc/cpuinfo", timeout=10)
+            cores = sum(
+                1 for line in cpuinfo.splitlines() if line.lower().startswith("processor")
+            ) or None
+        except TransportError:
+            cores = None
+
+        try:
+            freq_raw = await self.shell(
+                serial,
+                "cat /sys/devices/system/cpu/cpu*/cpufreq/cpuinfo_max_freq",
+                timeout=10,
+            )
+            values = [
+                int(line.strip())
+                for line in freq_raw.splitlines()
+                if line.strip().isdigit()
+            ]
+            max_freq = max(values) if values else None
+            # Some emulators expose a fake cpufreq (a bare "2"): anything below
+            # 100 MHz is not a real frequency, report it as unknown instead.
+            if max_freq is not None and max_freq < 100_000:
+                max_freq = None
+        except (TransportError, ValueError):
+            max_freq = None
+
+        cache[serial] = (cores, max_freq)
+        return cores, max_freq
 
     async def device_brand(self, serial: str) -> str | None:
         """Read ``ro.product.brand`` with a dedicated shell round trip.

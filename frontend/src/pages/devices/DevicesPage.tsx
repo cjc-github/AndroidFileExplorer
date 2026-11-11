@@ -206,7 +206,9 @@ export function DevicesPage() {
         const version = record.android_version;
         const api = record.api_level;
         const abi = record.cpu_abi;
-        if (!version && !abi) return <Typography.Text type="secondary">-</Typography.Text>;
+        const soc = record.board_platform;
+        if (!version && !abi && !soc)
+          return <Typography.Text type="secondary">-</Typography.Text>;
         return (
           <div className="device-name">
             <Typography.Text style={{ fontSize: 13 }}>
@@ -214,7 +216,7 @@ export function DevicesPage() {
               {api ? ` (API ${api})` : ""}
             </Typography.Text>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {abi ?? "-"}
+              {[soc, abi].filter(Boolean).join(" · ") || "-"}
             </Typography.Text>
           </div>
         );
@@ -224,19 +226,36 @@ export function DevicesPage() {
       title: "CPU",
       key: "cpu",
       width: 130,
-      render: (_, record) =>
-        record.metrics?.cpu_percent === null ||
-        record.metrics?.cpu_percent === undefined ? (
-          <Typography.Text type="secondary">采样中…</Typography.Text>
-        ) : (
-          <Progress
-            type="circle"
-            percent={record.metrics.cpu_percent}
-            size={72}
-            strokeWidth={9}
-            format={() => formatPercent(record.metrics?.cpu_percent)}
-          />
-        ),
+      render: (_, record) => {
+        const cores = record.cpu_cores;
+        const freqGhz =
+          record.cpu_max_freq_khz != null
+            ? (record.cpu_max_freq_khz / 1_000_000).toFixed(2)
+            : null;
+        return (
+          <Space direction="vertical" size={2} align="center">
+            {record.metrics?.cpu_percent === null ||
+            record.metrics?.cpu_percent === undefined ? (
+              <Typography.Text type="secondary">采样中…</Typography.Text>
+            ) : (
+              <Progress
+                type="circle"
+                percent={record.metrics.cpu_percent}
+                size={72}
+                strokeWidth={9}
+                format={() => formatPercent(record.metrics?.cpu_percent)}
+              />
+            )}
+            {cores != null || freqGhz != null ? (
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {cores != null ? `${cores} 核` : ""}
+                {cores != null && freqGhz != null ? " · " : ""}
+                {freqGhz != null ? `${freqGhz} GHz` : ""}
+              </Typography.Text>
+            ) : null}
+          </Space>
+        );
+      },
     },
     {
       title: "内存",
