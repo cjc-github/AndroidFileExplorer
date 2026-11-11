@@ -167,14 +167,24 @@ async def list_devices(
         await _sync_all_machines(db, resolver)
 
     devices = await registry.list_devices()
-    infos = [
-        await _device_with_metrics(device, db, resolver, collector)
-        for device in devices
-    ]
-    # The sampling path mutates the records (brand, root flag, static
-    # properties); without this commit those values never reach the
-    # database and every restart starts from stale rows.
-    await db.commit()
+
+    async def _sample_one(device) -> DeviceInfo:
+        # Every task gets its OWN database session: the sampling tasks run
+        # concurrently, and sharing one session across them makes the
+        # writes collide ("commit() can't be called here").
+        from app.db.session import async_session_maker
+
+        async with async_session_maker() as session:
+            fresh = await DeviceRegistry(session).get_device(device.uid)
+            if fresh is None:
+                return _to_device_info(device)
+            info = await _device_with_metrics(fresh, session, resolver, collector)
+            await session.commit()
+            return info
+
+    # The devices are independent: sampling them one after another made the
+    # request wait for the slowest (or for a dead device to time out).
+    infos = list(await asyncio.gather(*(_sample_one(device) for device in devices)))
     return BaseResponse.success(infos)
 
 
@@ -334,29 +344,36 @@ async def batch_root(
     """
 
     async def handle(uid: str) -> BatchResultItem:
-        registry = DeviceRegistry(db)
-        record = await registry.get_device(uid)
-        if record is None:
-            return BatchResultItem(uid=uid, ok=False, message="设备不存在")
+        # Every device gets its own database session: the tasks run
+        # concurrently, and sharing one session across them makes the
+        # commits collide ("commit() can't be called here").
+        from app.db.session import async_session_maker
+
         try:
-            transport = resolver.for_engine(record.engine_id)
-            ok, message = await transport.set_root(record.serial, payload.enable)
+            async with async_session_maker() as session:
+                registry = DeviceRegistry(session)
+                record = await registry.get_device(uid)
+                if record is None:
+                    return BatchResultItem(uid=uid, ok=False, message="设备不存在")
+                transport = resolver.for_engine(record.engine_id)
+                ok, message = await transport.set_root(record.serial, payload.enable)
+                if not ok:
+                    return BatchResultItem(uid=uid, ok=False, message=message)
+
+                collector.reset(uid)
+                rooted: bool | None = None
+                try:
+                    rooted = await transport.is_rooted(record.serial)
+                    record.is_rooted = rooted
+                    record.last_error = None
+                    record.updated_at = datetime.utcnow()
+                    await session.commit()
+                except Exception as exc:  # noqa: BLE001 - the switch itself worked
+                    logger.warning(
+                        f"batch root: could not store the state of {uid}: {exc}"
+                    )
         except Exception as exc:  # noqa: BLE001 - reported per device
             return BatchResultItem(uid=uid, ok=False, message=str(exc))
-
-        if not ok:
-            return BatchResultItem(uid=uid, ok=False, message=message)
-
-        collector.reset(uid)
-        rooted = None
-        try:
-            rooted = await transport.is_rooted(record.serial)
-            record.is_rooted = rooted
-            record.last_error = None
-            record.updated_at = datetime.utcnow()
-            await db.commit()
-        except Exception as exc:  # noqa: BLE001 - the switch itself worked
-            logger.warning(f"batch root: could not store the state of {uid}: {exc}")
 
         verb = "已以 root 模式重启 adbd" if payload.enable else "已恢复为普通用户模式"
         return BatchResultItem(

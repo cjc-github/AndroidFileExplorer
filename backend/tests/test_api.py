@@ -18,7 +18,7 @@ from app.config import settings
 from app.db import session as db_session
 from app.main import app
 from app.services.registry import build_device_uid
-from app.state import get_transport_resolver
+from app.state import get_metrics_collector, get_transport_resolver
 from app.transports.base import DeviceEntry, FileEntry, TransferResult
 
 from .conftest import FakeTransport
@@ -134,6 +134,51 @@ def test_metrics_endpoint_returns_cpu_and_memory(client):
     assert metrics["memory_total_bytes"] == 1024 * 1024 * 1024
     assert metrics["memory_percent"] == 50.0
     assert "cpu_percent" in metrics
+
+
+def test_device_list_samples_metrics_concurrently(client, monkeypatch):
+    """Two devices on one machine are sampled at the same time."""
+    transport = client.transport
+    transport._devices.append(
+        DeviceEntry(serial="emulator-5556", state="device", model="Pixel_6")
+    )
+    _seed_device(client)
+
+    async def _seed_second() -> None:
+        from app.services.registry import DeviceRegistry
+
+        async with db_session.async_session_maker() as session:
+            await DeviceRegistry(session).upsert_device(
+                transport, transport._devices[1], None
+            )
+
+    run_sync(_seed_second())
+
+    # The collector caches samples per uid (same uids across tests), so the
+    # earlier tests would satisfy the second device from the cache.
+    collector = get_metrics_collector()
+    collector.reset(uid1 := build_device_uid(transport.kind, transport.endpoint, "emulator-5554"))
+    collector.reset(uid2 := build_device_uid(transport.kind, transport.endpoint, "emulator-5556"))
+
+    active = 0
+    peak = 0
+
+    async def _slow_metrics(serial):
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        try:
+            await asyncio.sleep(0.05)
+            return await FakeTransport.metrics(transport, serial)
+        finally:
+            active -= 1
+
+    monkeypatch.setattr(transport, "metrics", _slow_metrics)
+
+    response = client.get("/api/v1/devices")
+    assert response.status_code == 200
+    assert len(response.json()["data"]) == 2
+    assert peak >= 2, "the devices must be sampled in parallel, not one by one"
 
 
 def test_unknown_device_is_404(client):

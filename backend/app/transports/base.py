@@ -109,6 +109,12 @@ _OFFLINE_MARKERS = (
     "broken pipe",
 )
 
+#: How long one ``id`` probe result is trusted.  The root flag only changes
+#: when adbd restarts (``adb root`` / ``adb unroot``), while the foreground
+#: polls every few seconds - without the cache every poll would pay one
+#: shell round trip per device just to ask for the identity.
+ROOT_CACHE_TTL_SECONDS = 15.0
+
 
 @dataclass(slots=True)
 class DeviceEntry:
@@ -433,13 +439,36 @@ class Transport(ABC):
         """True when the device shell runs as uid 0 (root).
 
         The default implementation asks the device for its identity, so every
-        transport supports it without extra code.
+        transport supports it without extra code.  The answer is cached for a
+        short window (the flag only changes when adbd restarts, and the
+        foreground polls every few seconds), and :meth:`set_root` drops the
+        entry so the next probe re-samples after a root switch.  A failed
+        probe is NOT cached - it is usually transient.
         """
+        cache = self._root_cache()
+        cached = cache.get(serial)
+        now = time.monotonic()
+        if cached is not None and (now - cached[1]) < ROOT_CACHE_TTL_SECONDS:
+            return cached[0]
         try:
             output = await self.shell(serial, "id", timeout=5)
         except TransportError:
             return False
-        return _is_root_identity(output)
+        rooted = _is_root_identity(output)
+        cache[serial] = (rooted, now)
+        return rooted
+
+    def _root_cache(self) -> dict[str, tuple[bool, float]]:
+        """Cache of the ``id`` probe result per device serial.
+
+        Created lazily: not every transport calls ``super().__init__()``,
+        so the cache cannot live in the constructor.
+        """
+        cache = getattr(self, "_rooted_cache", None)
+        if cache is None:
+            cache = {}
+            self._rooted_cache = cache
+        return cache
 
     async def set_root(self, serial: str, enabled: bool) -> tuple[bool, str]:
         """Enable or disable the root shell of a device.
@@ -456,6 +485,11 @@ class Transport(ABC):
             )
         except TransportError as exc:
             return False, str(exc)
+
+        # The flag may have changed: drop the cached identity probe so the
+        # next ``is_rooted`` call re-samples instead of reporting the old
+        # value for the rest of the cache window.
+        self._root_cache().pop(serial, None)
 
         output = unwrap_agent_output(raw or "")[1]
         lowered = (output or "").lower()
