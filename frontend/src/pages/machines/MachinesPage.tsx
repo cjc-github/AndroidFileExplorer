@@ -13,6 +13,7 @@ import {
   Space,
   Table,
   Tag,
+  Tooltip,
   Typography,
 } from "antd";
 import type { TableProps } from "antd";
@@ -26,6 +27,15 @@ import {
 } from "@/api";
 import type { Engine } from "@/api/types";
 import { formatTime } from "@/utils/format";
+
+const KIND_META: Record<
+  string,
+  { label: string; color: string | undefined; hint: string }
+> = {
+  local: { label: "本机 adb", color: undefined, hint: "本机 adb server" },
+  remote: { label: "agent", color: "blue", hint: "MDD agent 通道" },
+  ssh: { label: "SSH 直连", color: "purple", hint: "SSH 直连（零部署）" },
+};
 
 const engineStatusLabel: Record<string, string> = {
   connected: "已连接",
@@ -90,18 +100,34 @@ export function MachinesPage() {
       title: "名称",
       dataIndex: "name",
       key: "name",
-      render: (value: string | null, record) => (
-        <Space>
-          <span>{value || record.host}</span>
-          {record.kind === "local" ? <Tag>本机</Tag> : <Tag color="blue">远程</Tag>}
-        </Space>
-      ),
+      render: (value: string | null, record) => {
+        const meta = KIND_META[record.kind] ?? {
+          label: record.kind,
+          color: undefined,
+          hint: "",
+        };
+        return (
+          <div className="device-name">
+            <Space size={6}>
+              <Typography.Text strong>{value || record.host}</Typography.Text>
+              <Tag color={meta.color}>{meta.label}</Tag>
+            </Space>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {meta.hint}
+            </Typography.Text>
+          </div>
+        );
+      },
     },
     {
       title: "地址",
       key: "address",
       render: (_, record) => (
-        <Typography.Text type="secondary" style={{ fontFamily: "monospace" }}>
+        <Typography.Text
+          type="secondary"
+          copyable
+          style={{ fontFamily: "monospace", fontSize: 12 }}
+        >
           {record.host}:{record.port}
         </Typography.Text>
       ),
@@ -121,7 +147,12 @@ export function MachinesPage() {
       title: "设备数",
       dataIndex: "device_count",
       key: "device_count",
-      width: 100,
+      width: 90,
+      render: (value: number) => (
+        <Typography.Text strong={value > 0} type={value > 0 ? undefined : "secondary"}>
+          {value}
+        </Typography.Text>
+      ),
     },
     {
       title: "最后探测",
@@ -136,9 +167,15 @@ export function MachinesPage() {
       key: "last_error",
       render: (value: string | null) =>
         value ? (
-          <Typography.Text type="danger" style={{ fontSize: 12 }}>
-            {value}
-          </Typography.Text>
+          <Tooltip title={value}>
+            <Typography.Text
+              type="danger"
+              style={{ fontSize: 12 }}
+              ellipsis
+            >
+              {value}
+            </Typography.Text>
+          </Tooltip>
         ) : (
           "-"
         ),
@@ -148,9 +185,10 @@ export function MachinesPage() {
       key: "actions",
       width: 200,
       render: (_, record) => (
-        <Space>
+        <Space size={4}>
           <Button
             size="small"
+            icon={<ApiOutlined />}
             loading={testMutation.isPending}
             onClick={() => testMutation.mutate(record.id)}
           >
