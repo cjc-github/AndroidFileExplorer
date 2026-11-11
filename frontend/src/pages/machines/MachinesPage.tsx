@@ -7,6 +7,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Radio,
   Modal,
   Popconfirm,
   Space,
@@ -17,7 +18,12 @@ import {
 import type { TableProps } from "antd";
 import { ApiOutlined, DeleteOutlined, PlusOutlined } from "@ant-design/icons";
 
-import { createEngine, deleteEngine, getEngineList, testEngine } from "@/api";
+import {
+  createEngine,
+  deleteEngine,
+  getEngineList,
+  testEngine,
+} from "@/api";
 import type { Engine } from "@/api/types";
 import { formatTime } from "@/utils/format";
 
@@ -40,6 +46,7 @@ export function MachinesPage() {
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
   const [form] = Form.useForm();
+  const connectionMode = Form.useWatch("connection", form) ?? "agent";
 
   const enginesQuery = useQuery({
     queryKey: ["engines"],
@@ -209,7 +216,14 @@ export function MachinesPage() {
         <Form
           form={form}
           layout="vertical"
-          onFinish={(values) => createMutation.mutate(values)}
+          onFinish={(values) => {
+            const isSsh = values.connection === "ssh";
+            createMutation.mutate({
+              ...values,
+              kind: isSsh ? "ssh" : "remote",
+              port: isSsh ? (values.ssh_port ?? 22) : values.port,
+            });
+          }}
         >
           <Form.Item
             name="name"
@@ -225,20 +239,62 @@ export function MachinesPage() {
           >
             <Input placeholder="例如：192.168.114.130" />
           </Form.Item>
-          <Form.Item
-            name="port"
-            label="端口"
-            rules={[{ required: true, message: "请输入端口" }]}
-          >
-            <InputNumber min={1} max={65535} style={{ width: "100%" }} placeholder="12345" />
+          <Form.Item name="connection" label="连接方式" initialValue="agent">
+            <Radio.Group
+              options={[
+                { value: "agent", label: "部署 agent（MDD 端口）" },
+                { value: "ssh", label: "SSH 直连（无需部署）" },
+              ]}
+              optionType="button"
+              buttonStyle="solid"
+            />
           </Form.Item>
-          <Form.Item
-            name="token"
-            label="共享密钥"
-            extra="设备侧 agent 的认证密钥；留空表示不启用认证"
-          >
-            <Input.Password placeholder="例如：a-long-random-secret" />
-          </Form.Item>
+
+          {connectionMode === "agent" ? (
+            <>
+              <Form.Item
+                name="port"
+                label="agent 端口"
+                rules={[{ required: true, message: "请输入端口" }]}
+              >
+                <InputNumber min={1} max={65535} style={{ width: "100%" }} placeholder="12345" />
+              </Form.Item>
+              <Form.Item
+                name="token"
+                label="共享密钥"
+                extra="设备侧 agent 的认证密钥；留空表示不启用认证"
+              >
+                <Input.Password placeholder="例如：a-long-random-secret" />
+              </Form.Item>
+            </>
+          ) : (
+            <>
+              <Form.Item
+                name="ssh_port"
+                label="SSH 端口"
+                rules={[{ required: true, message: "请输入 SSH 端口" }]}
+              >
+                <InputNumber min={1} max={65535} style={{ width: "100%" }} placeholder="22" />
+              </Form.Item>
+              <Form.Item
+                name="ssh_username"
+                label="SSH 用户名"
+                rules={[{ required: true, message: "请输入用户名" }]}
+              >
+                <Input placeholder="例如：test" />
+              </Form.Item>
+              <Form.Item
+                name="ssh_password"
+                label="SSH 密码"
+                extra="留空时使用本机已配置的 SSH 密钥免密登录"
+              >
+                <Input.Password placeholder="用户密码；内网环境请知悉保管范围" />
+              </Form.Item>
+              <Form.Item name="adb_path" label="adb 路径（可选）">
+                <Input placeholder="adb 不在 PATH 时填写，例如 /usr/lib/android-sdk/platform-tools/adb" />
+              </Form.Item>
+            </>
+          )}
         </Form>
       </Modal>
     </div>

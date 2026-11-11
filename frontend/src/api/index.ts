@@ -107,7 +107,12 @@ export const createEngine = (payload: {
   name: string;
   host: string;
   port: number;
+  kind: "remote" | "ssh";
   token?: string;
+  ssh_username?: string;
+  ssh_password?: string;
+  ssh_port?: number;
+  adb_path?: string;
 }) => unwrap<Engine>(request.post("/engines", payload));
 
 /** Probe one machine and report how many devices it sees. */

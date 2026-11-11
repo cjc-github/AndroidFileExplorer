@@ -68,6 +68,10 @@ async def create_engine(
         port=payload.port,
         kind=payload.kind,
         token=payload.token,
+        ssh_username=payload.ssh_username,
+        ssh_password=payload.ssh_password,
+        ssh_port=payload.ssh_port,
+        adb_path=payload.adb_path,
     )
     logger.info(f"Engine created id={engine.id} {engine.host}:{engine.port}")
 
@@ -78,6 +82,10 @@ async def create_engine(
             host=engine.host,
             port=engine.port,
             token=engine.token,
+            ssh_username=engine.ssh_username,
+            ssh_password=engine.ssh_password,
+            ssh_port=engine.ssh_port,
+            adb_path=engine.adb_path,
         )
         devices = await transport.list_devices()
     except Exception as exc:  # noqa: BLE001 - the failure is reported to the caller
@@ -91,7 +99,15 @@ async def create_engine(
 
     await registry.update_engine_status(engine.id, "connected")
     resolver.register_engine(
-        engine.id, engine.kind, engine.host, engine.port, engine.token
+        engine.id,
+        engine.kind,
+        engine.host,
+        engine.port,
+        engine.token,
+        engine.ssh_username,
+        engine.ssh_password,
+        engine.ssh_port,
+        engine.adb_path,
     )
     await db.refresh(engine)
     return BaseResponse.success(
@@ -118,7 +134,15 @@ async def test_engine(
 
     try:
         transport = resolver.for_engine(
-            engine.id, kind=engine.kind, host=engine.host, port=engine.port
+            engine.id,
+            kind=engine.kind,
+            host=engine.host,
+            port=engine.port,
+            token=engine.token,
+            ssh_username=engine.ssh_username,
+            ssh_password=engine.ssh_password,
+            ssh_port=engine.ssh_port,
+            adb_path=engine.adb_path,
         )
         devices = await transport.list_devices()
     except Exception as exc:  # noqa: BLE001 - reported to the caller

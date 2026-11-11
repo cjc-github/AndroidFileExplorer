@@ -24,6 +24,13 @@ class EngineRecord(SQLModel, table=True):
     """``local`` for this host, ``remote`` for an MDD engine."""
     token: str | None = Field(default=None, max_length=200)
     """Shared secret for the device agent (None = no authentication)."""
+
+    ssh_username: str | None = Field(default=None, max_length=100)
+    ssh_password: str | None = Field(default=None, max_length=200)
+    """SSH credentials for kind="ssh" machines (never echoed by the API)."""
+    ssh_port: int = Field(default=22)
+    adb_path: str | None = Field(default=None, max_length=300)
+    """adb binary on the remote machine when it is not in PATH."""
     status: str = Field(default="unknown", max_length=20, index=True)
     """unknown / connected / disconnected / error."""
     last_error: str | None = Field(default=None, max_length=1000)

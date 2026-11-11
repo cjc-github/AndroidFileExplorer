@@ -29,5 +29,13 @@ async def sync_known_engines() -> None:
         result = await session.execute(select(EngineRecord))
         for engine in result.scalars().all():
             _transport_resolver.register_engine(
-                engine.id, engine.kind, engine.host, engine.port, engine.token
+                engine.id,
+                engine.kind,
+                engine.host,
+                engine.port,
+                engine.token,
+                engine.ssh_username,
+                engine.ssh_password,
+                engine.ssh_port,
+                engine.adb_path,
             )

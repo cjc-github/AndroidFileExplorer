@@ -58,6 +58,10 @@ export interface Engine {
   host: string;
   port: number;
   kind: string;
+  ssh_username: string | null;
+  ssh_port: number;
+  has_ssh_password: boolean;
+  adb_path: string | null;
   status: string;
   last_error: string | null;
   last_seen: string | null;

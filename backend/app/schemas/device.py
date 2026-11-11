@@ -13,9 +13,14 @@ class EngineCreate(BaseModel):
     name: str = Field(default="", max_length=100)
     host: str = Field(min_length=1, max_length=200)
     port: int = Field(default=12345, ge=1, le=65535)
-    kind: str = Field(default="remote", pattern="^(local|remote)$")
+    kind: str = Field(default="remote", pattern="^(local|remote|ssh)$")
     token: str | None = Field(default=None, max_length=200)
     """Shared secret for the device agent (None = no authentication)."""
+    ssh_username: str | None = Field(default=None, max_length=100)
+    ssh_password: str | None = Field(default=None, max_length=200)
+    """SSH credentials for kind="ssh" machines."""
+    ssh_port: int = Field(default=22, ge=1, le=65535)
+    adb_path: str | None = Field(default=None, max_length=300)
 
     @field_validator("host")
     @classmethod
@@ -30,6 +35,11 @@ class EngineInfo(BaseModel):
     """View model of a machine that hosts ADB."""
 
     id: int
+    ssh_username: str | None = None
+    ssh_port: int = 22
+    has_ssh_password: bool = False
+    """True when an SSH password is stored; the value itself never leaves."""
+    adb_path: str | None = None
     name: str
     host: str
     port: int

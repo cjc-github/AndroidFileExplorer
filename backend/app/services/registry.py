@@ -118,6 +118,10 @@ class DeviceRegistry:
         port: int,
         kind: str = "remote",
         token: str | None = None,
+        ssh_username: str | None = None,
+        ssh_password: str | None = None,
+        ssh_port: int = 22,
+        adb_path: str | None = None,
     ) -> EngineRecord:
         engine = EngineRecord(
             name=name or f"{host}:{port}",
@@ -125,6 +129,10 @@ class DeviceRegistry:
             port=port,
             kind=kind,
             token=token or None,
+            ssh_username=ssh_username or None,
+            ssh_password=ssh_password or None,
+            ssh_port=ssh_port,
+            adb_path=adb_path or None,
             status="unknown",
         )
         self.db.add(engine)
