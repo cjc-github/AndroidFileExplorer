@@ -31,6 +31,13 @@ class EngineRecord(SQLModel, table=True):
     ssh_port: int = Field(default=22)
     adb_path: str | None = Field(default=None, max_length=300)
     """adb binary on the remote machine when it is not in PATH."""
+    device_count: int = Field(default=0)
+    """Devices seen by the LAST probe/sync of this machine.
+
+    Device identity is engine-independent (uid = hw serial), so counting the
+    device rows per engine is zero-sum when several engines see the same
+    phone; this column keeps what the engine ACTUALLY reported last time.
+    """
     status: str = Field(default="unknown", max_length=20, index=True)
     """unknown / connected / disconnected / error."""
     last_error: str | None = Field(default=None, max_length=1000)

@@ -25,17 +25,11 @@ async def list_engines(
     """List every machine that can host Android devices."""
     registry = DeviceRegistry(db)
     engines = await registry.list_engines()
-    devices = await registry.list_devices()
 
-    counts: dict[int | None, int] = {}
-    for device in devices:
-        counts[device.engine_id] = counts.get(device.engine_id, 0) + 1
-
-    payload = []
-    for engine in engines:
-        info = EngineInfo.model_validate(engine)
-        info.device_count = counts.get(engine.id, 0)
-        payload.append(info)
+    # The count is what each engine's LAST probe/sync reported (see
+    # EngineRecord.device_count) - counting attributed rows would be zero-sum
+    # when several engines see the same physical device.
+    payload = [EngineInfo.model_validate(engine) for engine in engines]
     return BaseResponse.success(payload)
 
 
@@ -97,6 +91,7 @@ async def create_engine(
             message=f"机器已登记，但探测失败: {exc}",
         )
 
+    engine.device_count = len(devices)
     await registry.update_engine_status(engine.id, "connected")
     resolver.register_engine(
         engine.id,
@@ -151,6 +146,7 @@ async def test_engine(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=f"连接失败: {exc}"
         ) from exc
 
+    engine.device_count = len(devices)
     await registry.update_engine_status(engine.id, "connected")
     await db.refresh(engine)
     return BaseResponse.success(

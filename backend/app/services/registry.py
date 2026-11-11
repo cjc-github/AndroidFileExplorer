@@ -293,6 +293,14 @@ class DeviceRegistry:
             record = await self.upsert_device(transport, entry, engine_id)
             seen_uids.add(record.uid)
 
+        # Remember what THIS machine reported, independent of where the device
+        # rows end up being attributed.
+        if engine_id is not None:
+            engine = await self.db.get(EngineRecord, engine_id)
+            if engine is not None and engine.device_count != len(entries):
+                engine.device_count = len(entries)
+                engine.updated_at = datetime.now(timezone.utc)
+
         # Devices of this machine that disappeared are offline, not deleted.
         for record in await self.list_devices():
             if record.engine_id != engine_id or record.transport_kind != transport.kind:
