@@ -274,9 +274,13 @@ try {
   check("新建的目录出现在列表中", Boolean(listed));
 
   // Rename it through the row action.
+  //
+  // NOTE: the table uses antd's `virtual` rendering, so a data row is a
+  // <div class="ant-table-row">, not a <tr>. Both shapes carry the
+  // `ant-table-row` class, so select on that instead of the tag name.
   const renamed = await cdp.eval(`
     (() => {
-      const row = Array.from(document.querySelectorAll('tr')).find((tr) =>
+      const row = Array.from(document.querySelectorAll('.ant-table-row')).find((tr) =>
         tr.innerText?.includes(${JSON.stringify(DIR_NAME)}));
       if (!row) return false;
       const button = Array.from(row.querySelectorAll('button')).find(
@@ -335,7 +339,7 @@ try {
   // Delete it again.
   const deleted = await cdp.eval(`
     (() => {
-      const row = Array.from(document.querySelectorAll('tr')).find((tr) =>
+      const row = Array.from(document.querySelectorAll('.ant-table-row')).find((tr) =>
         tr.innerText?.includes(${JSON.stringify(RENAMED)}));
       if (!row) return false;
       const button = Array.from(row.querySelectorAll('button')).find(

@@ -1,10 +1,11 @@
 # 功能点实现清单
 
 > 以真机验证与自动化测试为勾选依据。每个 ✓ 都有对应的验证记录：
-> 真机（192.168.114.130 / emulator-5554）、`pytest`（124 passed）或门禁（`scripts/verify.sh` 六步全绿）。
+> 真机（192.168.114.130 / emulator-5554）、`pytest`（165 passed）、前端 `vitest`（18 passed）
+> 或门禁（`scripts/verify.sh` 六步全绿）。
 > 未勾选项为已知的待实现功能，按优先级排列。
 
-最后更新：2026-11-10 · 后端测试 124 passed · 门禁 6/6 全绿
+最后更新：2026-11-11 · 后端测试 165 passed · 前端 vitest 18 passed · 门禁 6/6 全绿
 
 ---
 
@@ -21,12 +22,16 @@
 - [x] 多台机器并发同步设备清单（`asyncio.gather`，单机故障不拖慢整体）
 - [x] 设备唯一标识跨重连稳定（`sha1("hw|" + ro.serialno)`）
 - [x] 同一台设备经多个 agent 发现只登记一次（设备身份不依赖接入路径）
+- [x] 远程机器命令连接池（默认 4 条常驻 MDD 连接，不同设备命令互不排队；坏连接自愈、机器刚失败时短暂跳过）
+- [x] 同一台机器只登记一次（`(kind, host, port)` 唯一索引，重复登记返回 400）
 
 ### 2. 文件拉取与上传
 
 - [x] 从设备拉取文件（设备 → agent → 服务器暂存 → **浏览器下载**，`GET .../files/download`）
 - [x] 设备侧 agent 实现文件传输协议（`FILE_PUSH` 字节流 + md5 校验 / `FILE_PULL` 回传字节流 + md5 校验）
 - [x] 上传本地文件到设备指定目录（`push` / multipart 上传）
+- [x] 上传流式落盘（分块写盘，2GiB 上限不再整体进内存；推送后删除暂存副本）
+- [x] 落地文件唯一命名（不同设备同名文件不互相覆盖）+ 过期自动清理（`STAGING_MAX_AGE_HOURS`，默认 24h）
 - [x] 文件大小、权限、属主、修改时间展示
 - [x] 命令注入防护（设备路径白名单，`$(id)` / `;` / `` ` `` / `|` 等一律 400）
 
@@ -37,6 +42,8 @@
 - [x] 内存使用率 + 已用 / 总量（圆环下方上下排列）
 - [x] 指标采集缓存（2.5s TTL，避免重复打设备）
 - [x] 设备品牌 / 型号展示（`getprop` 惰性缓存）
+- [x] root 状态探测缓存（15s TTL，root/unroot 后自动失效，轮询不再每次打设备）
+- [x] 设备列表指标并发采样（多设备互不排队）
 
 ### 4. 唯一标识与生命周期
 
@@ -73,6 +80,9 @@
 - [x] root 提权 / 取消提权（`adb root` / `adb unroot`，状态实时回写）
 - [x] adbd 重启后等待设备恢复（避免"离线窗口"误报失败）
 - [x] 取消 root 幂等（未 root 的设备执行 unroot 视为成功）
+- [x] 多选批量删除（逐项反馈成功 / 失败原因）
+- [x] 大目录虚拟滚动（数千条目只渲染可视区）
+- [x] 路径与搜索词同步到 URL（可分享 / 浏览器前进后退）
 
 ## 四、设备批量操作
 
@@ -92,18 +102,39 @@
 - [x] agent 命令白名单（只执行 adb 命令，其它一律拒绝）
 - [x] agent 共享密钥认证（`AUTH <token>` 握手，错误 token 一条命令都执行不了）
 - [x] 平台侧按机器存密钥（`EngineRecord.token`，登记表单可填）
+- [x] agent adb 进程并发上限（`--max-concurrent`，默认 8）：多设备命令可并行
 - [x] DB 轻量自动迁移（启动时补列，如 `token` / `alias` / `is_rooted` / `is_network_device`）
+- [x] SQLite WAL（并发同步任务写库不再 `database is locked`）
 
 ---
 
 ## 六、质量保障
 
-- [x] 后端单元 + 集成测试（124 passed，20 个测试文件）
+- [x] 后端单元 + 集成测试（165 passed，26 个测试文件）
+- [x] 前端单元测试（vitest + happy-dom，18 用例：格式化工具 / 请求层错误提取 / `?token=` 引导 / ErrorBoundary）
 - [x] 真实 uvicorn + 真实 HTTP 的端到端检查（`live_server_check`）
 - [x] 真实浏览器逐页渲染检查（`render-check`，Chrome headless DOM 断言）
 - [x] 文件浏览交互检查（CDP 真点击：跳转 / 面包屑 / 403 / 新建 / 重命名 / 删除）
 - [x] 六步门禁一键跑完（`scripts/verify.sh`）
+- [x] CI 流水线（`.github/workflows/ci.yml`：后端 pytest + e2e、前端 vitest + tsc/build）
+- [x] 请求 ID 日志追踪（后端 `X-Request-ID` 中间件，401 也带 ID）
+- [x] API 可选鉴权（`API_AUTH_TOKEN` + Bearer；下载锚点走 `?token=`）
+- [x] 前端全局 ErrorBoundary（渲染异常兜底页而不是白屏）
 - [x] React / react-dom 版本锁定（防白屏回归）
+
+### 交付前实测记录（2026-11-11）
+
+| 检查 | 手段 | 结果 |
+|---|---|---|
+| 后端 API 全链路 | 真实 uvicorn + 真实 HTTP（鉴权/请求ID/下载/增删改/设置/重复登记） | 16/16 |
+| 鉴权矩阵 | 另起 `API_AUTH_TOKEN=...` 实例：无token→401、错token→401、Bearer 大小写不敏感、`?token=` 走下载、**CORS preflight 不被拦截** | 9/9 |
+| 前端新功能 | 真实 Chrome（CDP）：路径写进 URL / 面包屑联动 / 刷新恢复 / 多选批量删除 / 行内下载 | 7/7 |
+| 虚拟滚动 | 48 条目目录：DOM 只渲染 14 行，滚动窗口随滚动移动 | 通过 |
+| 门禁 | `scripts/verify.sh` 六步 | 6/6 |
+
+> **注意**：antd Table 开 `virtual` 后数据行是 `<div class="ant-table-row">` 而非 `<tr>`。
+> 按标签名找行的检查脚本会静默失配（只匹配到表头），
+> 必须按 `.ant-table-row` class 定位。
 
 ---
 

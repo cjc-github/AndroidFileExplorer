@@ -8,7 +8,7 @@ Android 设备文件资源 / 文件管理能力：**远程机器连接配置**�
 
 ## 访问地址
 
-左侧竖排菜单三个入口：
+左侧竖排菜单四个入口（三个业务界面 + 平台设置）：
 
 | 界面 | 地址 | 内容 |
 |---|---|---|
@@ -16,6 +16,7 @@ Android 设备文件资源 / 文件管理能力：**远程机器连接配置**�
 | **设备资源管理** | http://192.168.114.128:10012/devices | 设备表 / 3 秒轮询 / 连接断开 / 浏览文件 |
 | **文件浏览**（选设备） | http://192.168.114.128:10012/files | 列出所有设备，点「浏览文件」进入 |
 | **文件浏览**（某设备） | http://192.168.114.128:10012/devices/{uid}/files | 目录 / 搜索 / 上传 / 拉取 |
+| **平台设置** | http://192.168.114.128:10012/settings | 刷新间隔 / 自动同步 / 自动 root，保存即生效 |
 | 后端 API | http://192.168.114.128:8010/api/v1 | |
 | API 文档 | http://192.168.114.128:8010/docs | |
 
@@ -27,7 +28,7 @@ Android 设备文件资源 / 文件管理能力：**远程机器连接配置**�
 ./scripts/dev.sh            # 前台启动（Ctrl+C 退出）
 ```
 
-## 三个界面
+## 三个界面 + 平台设置
 
 ### 1. 远程机器连接配置 `/machines`
 
@@ -36,7 +37,8 @@ Android 设备文件资源 / 文件管理能力：**远程机器连接配置**�
 | 功能 | 说明 |
 |---|---|
 | 机器列表 | 名称、地址、连接状态、设备数、最后探测时间、错误信息 |
-| 新增机器 | 登记后立即探测，失败会显示原因但**不回滚登记** |
+| 新增机器 | 登记后立即探测，失败会显示原因但**不回滚登记**；同一台机器重复登记返回 400 |
+| 共享密钥 | 登记时可为该机器填 agent 密钥（`AUTH <token>` 握手） |
 | 测试连接 | 现场探测该机器，返回探测到的设备数 |
 | 删除 | 删除机器及其设备记录；**本机不可删除** |
 
@@ -88,8 +90,12 @@ Android 设备文件资源 / 文件管理能力：**远程机器连接配置**�
 | **新建目录** | 在当前目录下创建目录（`mkdir -p`） |
 | **重命名** | 行内操作，可改名或移动到同级的其它名字 |
 | **删除** | 行内操作，删除目录时递归删除，操作前二次确认 |
+| **批量删除** | 多选后一次删除，逐项反馈成功 / 失败原因 |
 | 上传 | 上传到当前目录（multipart） |
 | 拉取 | 从设备拉取到服务端落地目录 |
+| **下载到浏览器** | 「下载」按钮把设备文件经服务端暂存后以附件形式回传，浏览器直接保存 |
+| **大目录虚拟滚动** | 数千条目只渲染可视区，滚动不卡 |
+| **路径写进 URL** | 当前路径与搜索词同步到地址栏，可分享 / 浏览器前进后退 |
 | 切换设备 | 文件页顶部「切换设备」返回选择页 |
 | **root 提权** | 未 root 时显示「尝试 root」；已 root 时显示「取消 root」，两者可来回切换 |
 
@@ -119,6 +125,16 @@ Android 上 **父目录不可读、子目录可读** 是常态（未 root 的设
 ```
 
 路径级权限不足**不会**改写设备生命周期状态（设备仍是 `online`）。
+
+### 4. 平台设置 `/settings`
+
+| 设置项 | 取值 | 作用 |
+|---|---|---|
+| 设备列表刷新间隔 | 1–60 秒（默认 3） | 前端轮询周期，页面文案联动 |
+| 后台自动同步间隔 | 0–86400 秒（默认 0） | 0 = 只手动同步；>0 则后台周期发现设备 |
+| 自动尝试 root | 开关（默认关） | 同步后对未 root 的在线设备执行 `adb root` |
+
+保存即生效，**无需重启**。
 
 ## 自包含架构
 
@@ -158,6 +174,8 @@ agent 的协议（与平台端 `backend/app/transports/mdd_client.py` 一一对�
 | 请求 | 响应 |
 |---|---|
 | `adb devices -l` | `命令执行成功 (返回码: 0)` + `标准输出:` + `====` + `===END===` |
+| `FILE_PUSH:{json}\n` + 字节流 | agent 收满 `file_size`（边收边算 md5，不符拒收）→ `adb push` → `OK` |
+| `FILE_PULL:{json}\n` | `FILE_INFO:FILE:<名>` + `FILE_DATA:<名>:<size>:<md5>` + 分块字节流（1MB/块）→ 客户端校验 md5 后回 `OK` |
 | `PING` | `PONG` |
 | `SHUTDOWN` | agent 自行退出 |
 | `AUTH <token>` | 连接后的第一行：共享密钥认证（配置了密钥时必须先通过） |
@@ -166,7 +184,8 @@ agent 的协议（与平台端 `backend/app/transports/mdd_client.py` 一一对�
 
 - agent **只执行 adb 命令**，其它命令一律拒绝；
 - 启动时加 `--token <密钥>`（或环境变量 `AFE_AGENT_TOKEN`）即启用认证，未认证的连接在第一条命令前就会被断开；
-- 平台侧在 **远程机器连接配置** 里填写同一密钥（存每台机器自己的记录里），部署时用 `--token` 传入。
+- 平台侧在 **远程机器连接配置** 里填写同一密钥（存每台机器自己的记录里），部署时用 `--token` 传入；
+- adb 进程并发上限 `--max-concurrent`（默认 8，或环境变量 `AFE_ADB_MAX_CONCURRENT`）：多设备命令可并行，突发流量不会压垮宿主机。
 
 ### 设备唯一标识
 
@@ -231,24 +250,30 @@ AndroidFileExplorer/
 ├── docs/
 │   ├── PLAN.md             实施计划（需求拆解 / 架构 / 里程碑 / 事故复盘）
 │   ├── FEATURES.md         功能点实现清单（勾选制，随交付更新）
+│   ├── TECHNICAL_IMPLEMENTATION.md  技术实现方案（模块 / 链路 / 关键决策）
 │   └── api-contract.md     HTTP 契约
 ├── agent/                   设备侧代理（仅标准库 + adb，可单独部署）
 ├── backend/                FastAPI + SQLModel
 │   ├── app/
 │   │   ├── transports/     base 抽象 + local_adb + mdd_client + remote_engine
 │   │   ├── services/       registry / file_service / metrics / transfer / transport_resolver
+│   │   ├── api/auth.py     可选 Bearer 鉴权中间件
+│   │   ├── api/request_id.py  请求 ID 中间件（X-Request-ID）
 │   │   ├── api/routes/     devices / files / engines
 │   │   └── main.py
 │   ├── scripts/            e2e_demo / live_server_check / render_check_with_device / real_device_check
-│   └── tests/              50 个 pytest 用例
+│   └── tests/              165 个 pytest 用例
 ├── frontend/               Vite + React 19 + antd 5 + TanStack Query + TanStack Router
 │   └── src/
-│       ├── api/            类型 + 请求封装
+│       ├── api/            类型 + 请求封装（含 token 引导）
+│       ├── components/     ErrorBoundary（全局兜底）
+│       ├── utils/          格式化工具
 │       ├── layout/         AppLayout（竖排菜单：远程机器 / 设备资源 / 文件浏览）
 │       ├── pages/machines/ 远程机器连接配置
 │       ├── pages/devices/  设备资源管理
 │       ├── pages/files/    文件浏览（设备选择 + 目录浏览）
 │       └── router.tsx      四条路由
+├── .github/workflows/ci.yml  CI（后端测试 + 前端 vitest/tsc/build）
 └── scripts/
     ├── start.sh            后台启动 / 停止
     ├── dev.sh              前台启动
@@ -276,12 +301,18 @@ cd frontend && npm install && cd ..
 
 | 步骤 | 内容 | 通过标准 |
 |---|---|---|
-| 1 | 后端单元 + 集成测试（含 agent、认证、设备标识、文件操作、root 切换） | 124 passed |
+| 1 | 后端单元 + 集成测试（含 agent、认证、设备标识、文件操作、root 切换、连接池、缓冲读） | 165 passed |
 | 2 | 后端端到端（TestClient） | 全部通过 |
 | 3 | 后端端到端（真实 uvicorn + 真实 HTTP） | 全部通过 |
 | 4 | 前端类型检查 + 生产构建 | `tsc -b` + `vite build` 通过 |
 | 5 | **真实浏览器逐页渲染检查（4 页）** | 33 项断言全 PASS |
 | 6 | **文件浏览交互检查**（路径直达 / 面包屑 / 越权提示） | 11 项断言全 PASS |
+
+前端另有单元测试：`cd frontend && npm test`（vitest + happy-dom，18 用例：
+格式化工具 / 请求层错误提取 / `?token=` 引导 / ErrorBoundary）。
+
+CI：`.github/workflows/ci.yml` 在 push / PR 上自动跑「后端 pytest + e2e smoke」
+与「前端 vitest + tsc/build」两个 job。
 
 带设备场景另跑一轮（`backend/scripts/render_check_with_device.py`）：4 页 42 项断言全 PASS。
 
@@ -339,6 +370,9 @@ cd backend && ../.venv/bin/python scripts/real_device_check.py --host 192.168.11
 | `METRICS_INTERVAL_SECONDS` | 3 | 前端轮询间隔的默认参考值 |
 | `UPLOAD_DIR` / `DOWNLOAD_DIR` | ./data/... | 文件落地目录 |
 | `MAX_UPLOAD_BYTES` | 2GiB | 单次上传上限 |
+| `STAGING_MAX_AGE_HOURS` | 24 | 落地/暂存文件保留时长（0 = 不清理） |
+| `API_AUTH_TOKEN` | （空） | 非空时开启 API 鉴权：除 `/api/v1/health` 外都要求 `Authorization: Bearer <token>`；前端可用 `?token=` 登录，下载锚点把 token 放 query |
+| `REMOTE_ENGINE_POOL_SIZE` | 4 | 每台远程机器并发命令连接数（坏连接自愈，满则排队） |
 
 ## 设计要点
 
@@ -355,5 +389,18 @@ cd backend && ../.venv/bin/python scripts/real_device_check.py --host 192.168.11
 - **一次 shell 往返**：CPU / 内存 / load average / 品牌全部在一次采样里取回（品牌单独一次调用，
   因为真机上 `getprop` 只有作为唯一命令时才能解析）。
 - **大文件不阻塞**：所有传输与文件 IO 都 `asyncio.to_thread` 卸载出事件循环。
+- **上传流式落盘**：multipart 分块写盘，2GiB 上限不再整体进内存。
+- **root 状态缓存**：`id` 探测带 15s TTL，root/unroot 后自动失效，轮询不再每次打设备。
+- **落地文件唯一命名 + 定期清理**：不同设备同名文件不互相覆盖；`STAGING_MAX_AGE_HOURS`（默认 24h）过期自动清。
+- **同一台机器只登记一次**：`(kind, host, port)` 唯一索引，重复登记返回 400。
+- **SQLite WAL**：并发同步任务写库不再有 `database is locked` 风险。
+- **远程命令连接池**：每台机器维持 `REMOTE_ENGINE_POOL_SIZE` 条常驻 MDD 连接，
+  不同设备的命令互不排队；坏连接自愈、机器刚失败时短暂跳过，传输走独立短连接。
+- **请求 ID 追踪**：每个响应带 `X-Request-ID`，访问日志同格式输出 `rid=...`，
+  用户报错时可直接定位那一次请求的全部日志。
+- **中间件顺序**：CORS 最外层（浏览器 preflight 不带 Authorization 头），
+  鉴权居中，请求 ID 最内层（401 也带 ID）。
+- **前端 URL 即状态**：文件浏览路径写进地址栏（可分享 / 前进后退），
+  大目录虚拟滚动、多选批量删除、全局 ErrorBoundary 兜底。
 - **react / react-dom 锁死同版本**：`package.json` 用精确版本 + `overrides`，
   避免 caret 分别解析出不同版本导致运行时白屏。

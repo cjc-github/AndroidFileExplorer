@@ -1,6 +1,10 @@
 # AndroidFileExplorer 实施计划
 
 > 目标：实现 frontend-api 项目中「Android 文件资源 / 文件管理」这块能力，只做核心功能（不含登录注册）。
+>
+> **本文是立项时的实施计划快照**，其中「验收结果」记录的是当时那个里程碑的数字，
+> 之后项目持续演进。当前状态以 `docs/FEATURES.md`（功能勾选）与
+> `docs/TECHNICAL_IMPLEMENTATION.md`（技术实现）为准。
 
 ## 0. 需求拆解（来自用户 4 条要求）
 

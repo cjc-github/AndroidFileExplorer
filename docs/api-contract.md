@@ -13,9 +13,39 @@
 | 设备离线 | 400 | `设备当前状态为 offline` |
 | 传输层故障（引擎不可达等） | 502 | 原始错误文本 |
 | 参数校验失败 | 422 | FastAPI 默认校验信息 |
+| 缺少 / 错误的 API token | 401 | `未授权：缺少或错误的 API token` |
+| 同一台机器重复登记 | 400 | `该机器已登记: {host}:{port}（{kind}）` |
 
 > **作用域约定**：路径级权限不足只影响该次请求（403），**不**改设备生命周期状态；
 > 只有设备级操作（指标采集、adb 状态轮询）才会改写 `status`。
+
+## 鉴权与请求追踪
+
+**鉴权（可选）**：后端默认**不鉴权**（`API_AUTH_TOKEN` 留空）。
+一旦配置了 `API_AUTH_TOKEN`，除 `GET /api/v1/health` 外的所有 `/api/v1` 请求
+都必须带上 `Authorization: Bearer <token>`：
+
+```http
+Authorization: Bearer <token>
+```
+
+下载接口走浏览器锚点点击，无法设置请求头，因此允许用 query 参数代替：
+
+```
+GET /api/v1/devices/{uid}/files/download?path=/sdcard/a.bin&token=<token>
+```
+
+两者同时存在时**请求头优先**。未授权返回 **401**。
+
+**请求 ID**：每个响应都带 `X-Request-ID` 头（请求自带则回显，否则生成 12 位十六进制 ID），
+后端访问日志同步输出 `rid=<id> METHOD path -> status (耗时ms)`，
+用户报错时凭这个 ID 可定位那一次请求的全部日志行。
+
+**中间件顺序**（`app/main.py`）：CORS 最外层 → 请求 ID 居中 → 鉴权最内层。
+浏览器 preflight（`OPTIONS`）不带 `Authorization` 头，所以 CORS 必须在鉴权之外；
+鉴权应答 401 时不会调用更内层的栈，所以请求 ID 必须在鉴权**之外**才能盖到 401——
+实测验证的结论（`CORS → 请求 ID → 鉴权` 是唯一同时满足 preflight 放行、
+401 带 ID、401 带 CORS 头的顺序）。
 
 ---
 
@@ -65,7 +95,16 @@
 请求体：
 
 ```json
-{ "name": "虚拟机", "host": "192.168.114.130", "port": 12345, "kind": "remote" }
+{ "name": "虚拟机", "host": "192.168.114.130", "port": 12345, "kind": "remote", "token": "<共享密钥，可选>" }
+```
+
+`token` 是该机器 agent 的共享密钥（`AUTH <token>` 握手），登记后所有发往该机器的
+命令都会带上它；不填表示该 agent 未启用认证。
+
+`(kind, host, port)` 上有唯一索引：**同一台机器只能登记一次**，重复登记返回 **400**：
+
+```json
+{ "detail": "该机器已登记: 192.168.114.130:12345（remote）" }
 ```
 
 登记后立即探测该机器的 ADB server。探测失败**不会回滚登记**，`message` 说明原因，
@@ -172,6 +211,34 @@ uid = sha1(f"{transport_kind}|{endpoint}|{serial}")[:16]
 
 断开该设备，`data.status` 变为 `offline`，`last_error` 为 `已主动断开`。
 
+### `PATCH /api/v1/devices/{uid}`
+
+请求体 `{ "alias": "工位机 01" }` —— 改设备别名（留空则清空）。
+
+### `POST /api/v1/devices/{uid}/root`
+
+以 root 模式重启 adbd（`adb root`），成功后设备受保护目录可读。
+生产版本设备会拒绝（`adbd cannot run as root in production builds`），此时返回 **400** 并说明原因。
+
+### `POST /api/v1/devices/{uid}/unroot`
+
+取消 root 模式（`adb unroot`）。未 root 的设备执行视为成功（幂等）。
+
+### `POST /api/v1/devices/batch/root`
+
+请求体 `{ "uids": ["uid1", "uid2"], "enable": true }` —— 批量切换 root 模式
+（`enable=false` 表示批量取消 root），并发执行，逐台返回结果：
+
+```json
+{
+  "code": 200,
+  "data": [
+    { "uid": "uid1", "ok": true, "message": "已切换 root 模式" },
+    { "uid": "uid2", "ok": false, "message": "adbd cannot run as root in production builds" }
+  ]
+}
+```
+
 ---
 
 ## 4. 设备文件
@@ -218,6 +285,22 @@ uid = sha1(f"{transport_kind}|{endpoint}|{serial}")[:16]
 
 按文件名递归搜索（深度与结果数有限制）。**受保护目录会被跳过，不影响整体搜索**。
 
+### `GET /api/v1/devices/{uid}/files/download?path={path}`
+
+把设备文件拉下来**直接回传给浏览器**（`Content-Disposition: attachment`），
+而不是只返回一个服务器路径让用户自己去捞。
+
+链路：设备 → agent → 服务端 `DOWNLOAD_DIR` 暂存 → 以附件形式输出。
+暂存文件带唯一名（`hello_a1b2c3d4e5f6.txt`），过期由 `STAGING_MAX_AGE_HOURS`（默认 24h）清理。
+
+鉴权开启时，锚点下载无法设置请求头，用 `&token=<token>` 传参：
+
+```
+GET /api/v1/devices/{uid}/files/download?path=/sdcard/a.bin&token=<token>
+```
+
+文件不存在返回 **404**，设备离线返回 **400**，权限不足返回 **403**。
+
 ### `POST /api/v1/devices/{uid}/files/pull`
 
 请求体 `{ "path": "/sdcard/hello.txt" }` —— 从设备拉取文件。
@@ -229,13 +312,18 @@ uid = sha1(f"{transport_kind}|{endpoint}|{serial}")[:16]
     "ok": true,
     "path": "/sdcard/hello.txt",
     "size": 26,
-    "stored_at": "/home/test/tcl/AndroidFileExplorer/data/downloads/hello.txt",
+    "stored_at": "/home/test/tcl/AndroidFileExplorer/data/downloads/hello_a1b2c3d4e5f6.txt",
     "message": ""
   }
 }
 ```
 
-> 远程机器的拉取落在**那台远程机器**上，`stored_at` 会写成 `host:port:/path`，不谎称落在 API 服务器。
+> 落地文件带**唯一名**（原名 + 12 位随机后缀），不同设备的同名文件不会互相覆盖。
+>
+> 无论本机还是远程机器，拉取的字节流最终都落在 **API 服务器的下载暂存目录**：
+> 远程链路是 设备 → agent（`adb pull` 到引擎机临时目录）→ `FILE_PULL` 字节流回传 →
+> API 服务器落盘。`stored_at` 是**真实落地路径**，`GET /files/download` 端点
+> 依赖它把文件回传给浏览器。
 
 ### `POST /api/v1/devices/{uid}/files/push`
 
@@ -243,11 +331,53 @@ uid = sha1(f"{transport_kind}|{endpoint}|{serial}")[:16]
 
 ### `POST /api/v1/devices/{uid}/files/upload?device_path={path}`
 
-`multipart/form-data`，字段名 `file`。服务端先落到 `UPLOAD_DIR` 再推送。
+`multipart/form-data`，字段名 `file`。服务端**分块流式落盘**到 `UPLOAD_DIR`
+（不整体进内存，2GiB 上限超出即中止并删除半成品），推送完成后删除暂存副本。
+
+### `POST /api/v1/devices/{uid}/files/mkdir`
+
+请求体 `{ "path": "/sdcard/newdir" }` —— 新建目录（`mkdir -p`，自动建父目录）。
+
+### `POST /api/v1/devices/{uid}/files/rename`
+
+请求体 `{ "source": "/sdcard/a.txt", "target": "/sdcard/b.txt" }` —— 重命名 / 移动。
+新名称与原名称相同时返回 **400**。
+
+### `POST /api/v1/devices/{uid}/files/remove`
+
+请求体 `{ "path": "/sdcard/dir", "recursive": true }` —— 删除文件 / 目录
+（目录递归删除）。路径级权限不足返回 **403**。
 
 ---
 
-## 5. 生命周期状态机
+## 5. 平台设置
+
+对应界面：**平台设置** `/settings`。
+
+### `GET /api/v1/settings`
+
+```json
+{
+  "code": 200,
+  "data": {
+    "sync_interval_seconds": 3,
+    "auto_root": false,
+    "auto_sync_seconds": 0
+  }
+}
+```
+
+### `PUT /api/v1/settings`
+
+请求体与响应同结构。保存后**立即生效**，无需重启：
+
+- `sync_interval_seconds`：前台设备列表轮询间隔（1–60 秒）。
+- `auto_sync_seconds`：后台自动同步间隔（0 = 只手动同步）。
+- `auto_root`：同步后是否自动对未 root 的在线设备执行 `adb root`。
+
+---
+
+## 6. 生命周期状态机
 
 | 状态 | 含义 | 进入条件 |
 |---|---|---|
