@@ -2,9 +2,44 @@ import axios from "axios";
 
 import type { ApiEnvelope } from "./types";
 
+const TOKEN_STORAGE_KEY = "afe_api_token";
+
+/**
+ * Pick up an API token handed in via ``?token=`` (bookmarkable login), keep
+ * it in localStorage and remove it from the address bar.
+ *
+ * The backend only checks tokens when ``API_AUTH_TOKEN`` is configured; with
+ * no token stored nothing is attached and requests behave as before.
+ */
+(function bootstrapApiToken(): void {
+  const url = new URL(window.location.href);
+  const queryToken = url.searchParams.get("token");
+  if (queryToken) {
+    localStorage.setItem(TOKEN_STORAGE_KEY, queryToken);
+    url.searchParams.delete("token");
+    window.history.replaceState({}, "", url.toString());
+  }
+})();
+
+export function getApiToken(): string {
+  try {
+    return localStorage.getItem(TOKEN_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
 export const request = axios.create({
   baseURL: "/api/v1",
   timeout: 60_000,
+});
+
+request.interceptors.request.use((config) => {
+  const token = getApiToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
 });
 
 /**

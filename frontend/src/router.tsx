@@ -15,6 +15,7 @@ import { SettingsPage } from "@/pages/settings/SettingsPage";
 import { DevicesPage } from "@/pages/devices/DevicesPage";
 import { FileBrowserPickerPage } from "@/pages/files/FileBrowserPickerPage";
 import { FileBrowserPage } from "@/pages/files/FileBrowserPage";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 import "antd/dist/reset.css";
 import "./styles.css";
@@ -40,7 +41,9 @@ const rootRoute = createRootRoute({
       >
         <AntApp>
           <AppLayout>
-            <Outlet />
+            <ErrorBoundary>
+              <Outlet />
+            </ErrorBoundary>
           </AppLayout>
         </AntApp>
       </ConfigProvider>
@@ -76,10 +79,14 @@ const filePickerRoute = createRoute({
   component: FileBrowserPickerPage,
 });
 
-/** 文件浏览：某台设备的文件目录 */
+/** 文件浏览：某台设备的文件目录（路径与搜索词同步到 URL，可分享可回退） */
 const fileBrowserRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/devices/$uid/files",
+  validateSearch: (search: Record<string, unknown>): { path?: string; q?: string } => ({
+    path: typeof search.path === "string" && search.path ? search.path : undefined,
+    q: typeof search.q === "string" && search.q ? search.q : undefined,
+  }),
   component: FileBrowserPage,
 });
 

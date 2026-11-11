@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState, type Key } from "react";
+import { useParams, useNavigate, useSearch } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
@@ -43,7 +43,7 @@ import {
   unRootDevice,
   uploadDeviceFile,
 } from "@/api";
-import { extractErrorMessage, isPermissionError } from "@/api/request";
+import { extractErrorMessage, getApiToken, isPermissionError } from "@/api/request";
 import type { FileItem } from "@/api/types";
 import { formatBytes, formatTime } from "@/utils/format";
 
@@ -59,18 +59,23 @@ function normalizePath(input: string): string {
 export function FileBrowserPage() {
   const { uid } = useParams({ from: "/devices/$uid/files" });
   const navigate = useNavigate();
+  const routeSearch = useSearch({ from: "/devices/$uid/files" });
   const { message } = App.useApp();
   const queryClient = useQueryClient();
 
-  const [path, setPath] = useState("/");
-  const [pathInput, setPathInput] = useState("/");
-  const [keyword, setKeyword] = useState("");
-  const [searchMode, setSearchMode] = useState(false);
+  // The current path (and the active search keyword) live in the URL, so a
+  // directory can be shared or restored with the browser back button. The
+  // state initialises from the URL and follows it on back/forward.
+  const [path, setPath] = useState(() => normalizePath(routeSearch.path ?? "/"));
+  const [pathInput, setPathInput] = useState(() => normalizePath(routeSearch.path ?? "/"));
+  const [keyword, setKeyword] = useState(routeSearch.q ?? "");
+  const [searchMode, setSearchMode] = useState(Boolean(routeSearch.q));
 
   const [mkdirOpen, setMkdirOpen] = useState(false);
   const [mkdirName, setMkdirName] = useState("");
   const [renameTarget, setRenameTarget] = useState<FileItem | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [selectedKeys, setSelectedKeys] = useState<Key[]>([]);
 
   const deviceQuery = useQuery({
     queryKey: ["device-detail", uid],
@@ -102,11 +107,24 @@ export function FileBrowserPage() {
     setPathInput(path);
   }, [path]);
 
+  // Browser back/forward: the URL is the source of truth.
+  useEffect(() => {
+    if (routeSearch.path) setPath(normalizePath(routeSearch.path));
+  }, [routeSearch.path]);
+
+  useEffect(() => {
+    setKeyword(routeSearch.q ?? "");
+    setSearchMode(Boolean(routeSearch.q));
+  }, [routeSearch.q]);
+
   const pullToBrowser = (filePath: string) => {
     // The server pulls the file into its staging directory and answers with
     // the bytes as an attachment; an anchor click hands it to the browser.
+    // The anchor cannot set headers, so the optional API token travels in
+    // the query string (the backend accepts both).
     const name = filePath.split("/").pop() || "download.bin";
-    const url = `/api/v1/devices/${uid}/files/download?path=${encodeURIComponent(filePath)}`;
+    const token = getApiToken();
+    const url = `/api/v1/devices/${uid}/files/download?path=${encodeURIComponent(filePath)}${token ? `&token=${encodeURIComponent(token)}` : ""}`;
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = name;
@@ -153,6 +171,12 @@ export function FileBrowserPage() {
     setSearchMode(false);
     setKeyword("");
     setPath(normalized);
+    setSelectedKeys([]);
+    navigate({
+      to: "/devices/$uid/files",
+      params: { uid },
+      search: { path: normalized },
+    });
   };
 
   const refreshFiles = () => {
@@ -192,6 +216,32 @@ export function FileBrowserPage() {
     onError: (error: Error) => message.error(error.message || "删除失败"),
   });
 
+  const batchDeleteMutation = useMutation({
+    mutationFn: async (targets: FileItem[]) => {
+      const results = await Promise.allSettled(
+        targets.map((item) => removeOnDevice(uid, item.path, item.is_dir)),
+      );
+      const failed = results.filter((result) => result.status === "rejected");
+      if (failed.length > 0) {
+        const first = (failed[0] as PromiseRejectedResult).reason;
+        throw new Error(
+          `${failed.length} 项删除失败：${extractErrorMessage(first) || "未知原因"}`,
+        );
+      }
+      return results.length;
+    },
+    onSuccess: (count) => {
+      message.success(`已删除 ${count} 项`);
+      setSelectedKeys([]);
+      refreshFiles();
+    },
+    onError: (error: Error) => {
+      message.error(error.message || "批量删除失败");
+      setSelectedKeys([]);
+      refreshFiles();
+    },
+  });
+
   const parentOf = (target: string) => target.slice(0, target.lastIndexOf("/") || 0);
 
   const submitRename = () => {
@@ -207,6 +257,7 @@ export function FileBrowserPage() {
       title: "名称",
       dataIndex: "name",
       key: "name",
+      width: 300,
       render: (_, record) => (
         <Space>
           {record.is_dir ? <FolderOutlined /> : <FileOutlined />}
@@ -366,8 +417,17 @@ export function FileBrowserPage() {
             value={keyword}
             onChange={(event) => setKeyword(event.target.value)}
             onSearch={(value) => {
-              setSearchMode(Boolean(value.trim()));
+              const trimmed = value.trim();
+              setSearchMode(Boolean(trimmed));
+              setKeyword(trimmed);
               setPath("/");
+              setPathInput("/");
+              setSelectedKeys([]);
+              navigate({
+                to: "/devices/$uid/files",
+                params: { uid },
+                search: trimmed ? { path: "/", q: trimmed } : { path: "/" },
+              });
             }}
           />
           <Upload
@@ -392,6 +452,34 @@ export function FileBrowserPage() {
           >
             新建目录
           </Button>
+          {selectedKeys.length > 0 ? (
+            <Popconfirm
+              title={`删除选中的 ${selectedKeys.length} 项？`}
+              description="目录将被递归删除，操作不可恢复"
+              okText="删除"
+              okButtonProps={{ danger: true }}
+              cancelText="取消"
+              onConfirm={() => {
+                const items = data?.items ?? [];
+                const targets = items.filter((item) =>
+                  selectedKeys.includes(item.path),
+                );
+                if (targets.length === 0) {
+                  setSelectedKeys([]);
+                  return;
+                }
+                batchDeleteMutation.mutate(targets);
+              }}
+            >
+              <Button
+                danger
+                icon={<DeleteOutlined />}
+                loading={batchDeleteMutation.isPending}
+              >
+                删除选中 ({selectedKeys.length})
+              </Button>
+            </Popconfirm>
+          ) : null}
         </Space>
       </Space>
 
@@ -516,6 +604,13 @@ export function FileBrowserPage() {
         <Table
           rowKey="path"
           size="small"
+          virtual
+          scroll={{ x: 1110, y: 520 }}
+          rowSelection={{
+            selectedRowKeys: selectedKeys,
+            onChange: (keys) => setSelectedKeys(keys),
+            preserveSelectedRowKeys: false,
+          }}
           dataSource={data?.items ?? []}
           columns={columns}
           loading={filesQuery.isFetching || deviceQuery.isLoading}
