@@ -36,6 +36,7 @@ import {
 import { extractErrorMessage } from "@/api/request";
 import type { Device } from "@/api/types";
 import { deviceStatusColor, deviceStatusLabel } from "@/api/status";
+import { useEnvironmentCheck } from "@/hooks/useEnvironmentCheck";
 import { useRefreshInterval } from "@/hooks/useRefreshInterval";
 import { formatBytes, formatPercent, formatTime } from "@/utils/format";
 
@@ -61,6 +62,10 @@ export function DevicesPage() {
   // The refresh interval is a platform setting (defaults to 3s), shared with
   // the file picker and the file browser.
   const pollMs = useRefreshInterval(POLL_INTERVAL_MS / 1000);
+  const environmentQuery = useEnvironmentCheck();
+  const adbIssue = environmentQuery.data?.checks.find(
+    (item) => item.key === "adb" && !item.ok,
+  );
 
   const devicesQuery = useQuery({
     queryKey: ["devices"],
@@ -514,6 +519,21 @@ export function DevicesPage() {
           action={
             <Button size="small" onClick={() => devicesQuery.refetch()}>
               重试
+            </Button>
+          }
+        />
+      ) : null}
+
+      {adbIssue && devices.length === 0 ? (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="本机 adb 不可用，暂无设备可发现"
+          description={adbIssue.message}
+          action={
+            <Button size="small" onClick={() => navigate({ to: "/settings" })}>
+              环境自检
             </Button>
           }
         />

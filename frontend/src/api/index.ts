@@ -4,6 +4,7 @@ import type {
   Device,
   DeviceMetrics,
   Engine,
+  EnvironmentCheckResult,
   FileList,
   FilePreview,
   PlatformSettings,
@@ -179,6 +180,10 @@ export const downloadDeviceFile = (
     signal: options?.signal,
     onDownloadProgress: options?.onDownloadProgress,
   });
+
+/** Environment prerequisites (adb / asyncssh / Python / storage). */
+export const getEnvironmentCheck = () =>
+  unwrap<EnvironmentCheckResult>(request.get("/system/check"));
 
 /** List the machines that host ADB servers. */
 export const getEngineList = () => unwrap<Engine[]>(request.get("/engines"));

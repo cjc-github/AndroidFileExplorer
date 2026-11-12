@@ -105,6 +105,20 @@ export interface FilePreview {
   size?: number;
 }
 
+export interface EnvironmentCheckItem {
+  key: string;
+  label: string;
+  ok: boolean;
+  required: boolean;
+  message: string;
+  fix: string | null;
+}
+
+export interface EnvironmentCheckResult {
+  ok: boolean;
+  checks: EnvironmentCheckItem[];
+}
+
 export interface TransferInfo {
   ok: boolean;
   path: string;
