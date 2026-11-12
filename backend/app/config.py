@@ -60,7 +60,7 @@ class Settings:
     """Concurrent MDD command connections kept per remote machine."""
 
     device_offline_threshold: int = _int_env("DEVICE_OFFLINE_THRESHOLD", 2)
-    metrics_interval_seconds: int = _int_env("METRICS_INTERVAL_SECONDS", 3)
+    """Consecutive metric failures before a device is shown as offline/error."""
 
     data_dir: Path = DATA_DIR
     upload_dir: Path = _path_env("UPLOAD_DIR", DATA_DIR / "uploads")

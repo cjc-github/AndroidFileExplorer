@@ -8,6 +8,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.response import BaseResponse
 from app.db.session import get_session
 from app.logger import logger
@@ -58,7 +59,7 @@ def _to_metrics(sample) -> DeviceMetrics:
 #: How many consecutive metric failures flip the device state.  Unauthorized
 #: and permission errors are applied immediately; offline / generic errors are
 #: debounced because a single miss happens while adbd restarts after root.
-METRICS_FAILURE_THRESHOLD = 2
+METRICS_FAILURE_THRESHOLD = max(1, settings.device_offline_threshold)
 
 
 async def _apply_metrics_failure(
