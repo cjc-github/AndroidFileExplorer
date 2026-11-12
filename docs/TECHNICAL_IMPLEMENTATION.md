@@ -24,7 +24,7 @@
 | 路由 | @tanstack/react-router | 1.x | 6 条路由（代码式路由） |
 | HTTP 客户端 | axios | 1.14.x | 统一请求封装 |
 | 设备侧 agent | Python 标准库 | 3.10+ | `socketserver.ThreadingTCPServer`，零第三方依赖 |
-| 测试 | pytest + pytest-asyncio | 8.x | 165 用例（含假 MDD 服务端） |
+| 测试 | pytest + pytest-asyncio | 8.x | 190 用例（含假 MDD 服务端） |
 | 前端测试 | vitest + happy-dom | 4.x | 18 用例（请求层 / 工具 / ErrorBoundary） |
 | 渲染验证 | Chrome DevTools Protocol + headless chrome | - | 零 npm 依赖的真实浏览器检查 |
 
@@ -484,7 +484,7 @@ app.add_middleware(CORSMiddleware, ...)       # 最后加 = 最外层
 
 | 层 | 手段 | 说明 |
 |---|---|---|
-| 后端单测/集成 | `backend/tests/`（165 用例，26 个文件） | 覆盖：agent 协议与认证、信封解包、MDD 缓冲读、连接池并发、设备标识稳定性、文件操作、路径安全、root 切换、指标差分、迁移、鉴权、请求 ID、传输服务 |
+| 后端单测/集成 | `backend/tests/`（190 用例，26 个文件） | 覆盖：agent 协议与认证、信封解包、MDD 缓冲读、连接池并发、设备标识稳定性、文件操作、路径安全、root 切换、指标差分、迁移、鉴权、请求 ID、传输服务 |
 | 假件隔离 | `tests/fake_mdd_server.py`、假 Transport、计数假引擎 | 真实设备不可达环境下的完整链路验证 |
 | 后端 e2e | `scripts/e2e_demo.py`（TestClient）+ `live_server_check.py`（真 uvicorn + 真 HTTP） | 两级端到端 |
 | **前端单测** | `npm test`（vitest + happy-dom，零额外 runtime 依赖） | format 工具、请求层错误提取、`?token=` 引导、ErrorBoundary 行为 |

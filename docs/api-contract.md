@@ -110,6 +110,26 @@ GET /api/v1/devices/{uid}/files/download?path=/sdcard/a.bin&token=<token>
 登记后立即探测该机器的 ADB server。探测失败**不会回滚登记**，`message` 说明原因，
 `data.status` 变为 `error`。
 
+### `PATCH /api/v1/engines/{engine_id}`
+
+编辑机器配置，**保留该机器名下的设备记录**。请求体字段均可选：
+
+```json
+{
+  "name": "新名字",
+  "host": "192.168.114.130",
+  "port": 12345,
+  "token": "<新共享密钥，留空表示保留>",
+  "ssh_username": "root",
+  "ssh_password": "<新密码，留空表示保留>",
+  "ssh_port": 22,
+  "adb_path": "/usr/bin/adb"
+}
+```
+
+保存后会清理旧 transport 缓存并按新配置重新探测。地址改成已登记的另一台机器返回 **400**。
+`GET /api/v1/engines` 的 `has_ssh_password` 字段只返回布尔值，**不回显密码**。
+
 ### `POST /api/v1/engines/{engine_id}/test`
 
 现场探测该机器，返回探测到的设备数。
@@ -281,9 +301,41 @@ uid = sha1(f"{transport_kind}|{endpoint}|{serial}")[:16]
 { "detail": "Permission denied: /system" }
 ```
 
-### `GET /api/v1/devices/{uid}/files/search?keyword={kw}&path={path}`
+### `GET /api/v1/devices/{uid}/files/search?keyword={kw}&path={path}&limit={n}`
 
-按文件名递归搜索（深度与结果数有限制）。**受保护目录会被跳过，不影响整体搜索**。
+按文件名递归搜索（深度与目录数有限制）。**受保护目录会被跳过，不影响整体搜索**。
+`limit` 控制最多返回的结果数（默认 200，最大 1000）；达到上限时 `truncated=true`，
+前端可提高 `limit` 继续加载。
+
+### `GET /api/v1/devices/{uid}/files/preview?path={path}`
+
+返回文本或图片的小文件预览（上限 **2MB**）：
+
+```json
+{
+  "code": 200,
+  "data": {
+    "kind": "text",
+    "content": "#!/system/bin/sh\n...",
+    "size": 1254
+  }
+}
+```
+
+`kind` 为 `text` / `image` / `binary`；图片额外返回 `content_type`，`content` 为 base64。
+目录、文件过大或无法读取大小时返回 **400**，文件不存在返回 **404**。
+
+### `GET /api/v1/devices/{uid}/files/archive?path={path}`
+
+把设备目录打包为 zip 并以附件回传。服务端递归列举后逐个拉取文件，
+限制 **200 个文件 / 200MB / 6 层目录**，超出返回 **400**。
+受保护目录和符号链接会被跳过，并在压缩包内 `_download_errors.txt` 中说明。
+
+### `POST /api/v1/devices/{uid}/files/archive-selection`
+
+请求体 `{ "paths": ["/sdcard/a.txt", "/sdcard/lib"] }` —— 把选中的文件 / 目录
+（目录递归）打包为一个 zip 返回。规则与目录打包一致：最多 200 个文件 / 200MB，
+受保护目录与符号链接会跳过并在 `_download_errors.txt` 中说明。
 
 ### `GET /api/v1/devices/{uid}/files/download?path={path}`
 
@@ -342,6 +394,22 @@ GET /api/v1/devices/{uid}/files/download?path=/sdcard/a.bin&token=<token>
 
 请求体 `{ "source": "/sdcard/a.txt", "target": "/sdcard/b.txt" }` —— 重命名 / 移动。
 新名称与原名称相同时返回 **400**。
+
+### `POST /api/v1/devices/{uid}/files/copy`
+
+请求体 `{ "source": "/sdcard/a", "target": "/sdcard/b" }` —— 复制文件 / 目录
+（设备侧 `cp -r`）。源和目标相同时返回 **400**。
+
+### `POST /api/v1/devices/{uid}/files/permissions`
+
+请求体：
+
+```json
+{ "path": "/sdcard/a", "mode": "644", "owner": "shell", "group": "shell" }
+```
+
+`mode` 为 3~4 位八进制；`owner` / `group` 可只填一项；至少填写一项。
+格式非法返回 **400**，设备拒绝（常见于未 root 修改系统目录）返回 **403**。
 
 ### `POST /api/v1/devices/{uid}/files/remove`
 
