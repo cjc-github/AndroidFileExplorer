@@ -13,10 +13,10 @@ Android 设备文件资源 / 文件管理能力：**远程机器连接配置**�
 | 界面 | 地址 | 内容 |
 |---|---|---|
 | **远程机器连接配置** | http://192.168.114.128:10012/machines | 机器列表 / 新增 / 测试连接 / 删除 |
-| **设备资源管理** | http://192.168.114.128:10012/devices | 设备表 / 3 秒轮询 / 连接断开 / 浏览文件 |
+| **设备资源管理** | http://192.168.114.128:10012/devices | 设备表 / 按设置轮询 / 连接断开 / 浏览文件 |
 | **文件浏览**（选设备） | http://192.168.114.128:10012/files | 列出所有设备，点「浏览文件」进入 |
 | **文件浏览**（某设备） | http://192.168.114.128:10012/devices/{uid}/files | 目录 / 搜索 / 上传 / 拉取 |
-| **平台设置** | http://192.168.114.128:10012/settings | 刷新间隔 / 自动同步 / 自动 root，保存即生效 |
+| **平台设置** | http://192.168.114.128:10012/settings | 刷新间隔 / 自动同步 / 自动 root / 环境自检 |
 | 后端 API | http://192.168.114.128:8010/api/v1 | |
 | API 文档 | http://192.168.114.128:8010/docs | |
 
@@ -142,8 +142,9 @@ Android 上 **父目录不可读、子目录可读** 是常态（未 root 的设
 | 设备列表刷新间隔 | 1–60 秒（默认 3） | 设备页、文件选择页、文件浏览页共用的状态刷新周期 |
 | 后台自动同步间隔 | 0–86400 秒（默认 0） | 0 = 后台不再周期探测（页面打开期间仍会做恢复性同步，也可手动「同步」）；>0 则后台周期发现设备 |
 | 自动尝试 root | 开关（默认关） | 每次同步后对未 root 的在线设备执行 `adb root`（每个同步周期只执行一次） |
+| 环境自检 | 只读 | 检查 Python / 后端依赖 / asyncssh / adb / 数据目录；缺失项给出修复命令 |
 
-保存即生效，**无需重启**。
+设置保存即生效，**无需重启**。
 
 ## 自包含架构
 
@@ -266,15 +267,17 @@ AndroidFileExplorer/
 │   ├── PLAN.md             实施计划（需求拆解 / 架构 / 里程碑 / 事故复盘）
 │   ├── FEATURES.md         功能点实现清单（勾选制，随交付更新）
 │   ├── TECHNICAL_IMPLEMENTATION.md  技术实现方案（模块 / 链路 / 关键决策）
-│   └── api-contract.md     HTTP 契约
+│   ├── AGENT.md            设备侧 agent 使用与运维指南
+│   ├── api-contract.md     HTTP 契约
+│   └── 20261112-界面功能不足与修复清单.md  本轮界面/功能修复清单
 ├── agent/                   设备侧代理（仅标准库 + adb，可单独部署）
 ├── backend/                FastAPI + SQLModel
 │   ├── app/
 │   │   ├── transports/     base 抽象 + local_adb + mdd_client + remote_engine
-│   │   ├── services/       registry / file_service / metrics / transfer / transport_resolver
+│   │   ├── services/       registry / file_service / metrics / transfer / transport_resolver / preflight
 │   │   ├── api/auth.py     可选 Bearer 鉴权中间件
 │   │   ├── api/request_id.py  请求 ID 中间件（X-Request-ID）
-│   │   ├── api/routes/     devices / files / engines
+│   │   ├── api/routes/     devices / files / engines / settings / system
 │   │   └── main.py
 │   ├── scripts/            e2e_demo / live_server_check / render_check_with_device / real_device_check
 │   └── tests/              192 个 pytest 用例
@@ -282,12 +285,14 @@ AndroidFileExplorer/
 │   └── src/
 │       ├── api/            类型 + 请求封装（含 token 引导）
 │       ├── components/     ErrorBoundary（全局兜底）
+│       ├── hooks/          刷新间隔 / 环境自检等共享 query hook
 │       ├── utils/          格式化工具
-│       ├── layout/         AppLayout（竖排菜单：远程机器 / 设备资源 / 文件浏览）
+│       ├── layout/         AppLayout（竖排菜单：远程机器 / 设备资源 / 文件浏览 / 设置）
 │       ├── pages/machines/ 远程机器连接配置
 │       ├── pages/devices/  设备资源管理
 │       ├── pages/files/    文件浏览（设备选择 + 目录浏览）
-│       └── router.tsx      四条路由
+│       ├── pages/settings/ 平台设置 + 环境自检
+│       └── router.tsx      五条业务路由 + 根重定向
 ├── .github/workflows/ci.yml  CI（后端测试 + 前端 vitest/tsc/build）
 └── scripts/
     ├── check-env.sh        本地环境检查（Python / 依赖 / node / adb）
@@ -403,7 +408,7 @@ cd backend && ../.venv/bin/python scripts/real_device_check.py --host 192.168.11
 | `ADB_PATH` | adb | 本机 adb 可执行文件 |
 | `ENGINE_CONNECT_TIMEOUT` | 5 | 远程引擎连接超时（秒） |
 | `ENGINE_COMMAND_TIMEOUT` | 30 | 远程引擎命令超时（秒） |
-| `METRICS_INTERVAL_SECONDS` | 3 | 前端轮询间隔的默认参考值 |
+| `DEVICE_OFFLINE_THRESHOLD` | 2 | 连续多少次指标采集失败后把设备标记为离线/异常 |
 | `UPLOAD_DIR` / `DOWNLOAD_DIR` | ./data/... | 文件落地目录 |
 | `MAX_UPLOAD_BYTES` | 2GiB | 单次上传上限 |
 | `STAGING_MAX_AGE_HOURS` | 24 | 落地/暂存文件保留时长（0 = 不清理） |
@@ -440,3 +445,5 @@ cd backend && ../.venv/bin/python scripts/real_device_check.py --host 192.168.11
   大目录虚拟滚动、多选批量删除、全局 ErrorBoundary 兜底。
 - **react / react-dom 锁死同版本**：`package.json` 用精确版本 + `overrides`，
   避免 caret 分别解析出不同版本导致运行时白屏。
+- **环境自检**：启动只记录 warning，`GET /api/v1/system/check` 供设置页展示；
+  `adb` / `asyncssh` 是可选能力，缺失不阻止后端启动，设置页与设备页给出修复指引。

@@ -89,7 +89,7 @@ AndroidFileExplorer/
 - 单次 shell：`cat /proc/stat; echo '---AFE---'; cat /proc/meminfo`。
 - CPU：累计 jiffies 差分 `1 - Δidle/Δtotal`，保留上次采样点；首次采样返回 `null`（无基线不编数）。
 - 内存：`MemTotal` / `MemAvailable`（缺失时回退 `MemFree+Buffers+Cached`）→ used、total、percent。
-- 前台每 3 秒轮询（可配 `METRICS_INTERVAL_SECONDS`）。
+- 前台每 3 秒轮询（后续改为平台设置页配置，`METRICS_INTERVAL_SECONDS` 已废弃）。
 
 ## 6. API 契约（详见 docs/api-contract.md）
 
@@ -98,7 +98,7 @@ AndroidFileExplorer/
 | GET | `/api/v1/health` | 健康检查 |
 | GET | `/api/v1/engines` | 远程机器列表 |
 | POST | `/api/v1/engines` | 新增远程机器并探活 |
-| GET | `/api/v1/devices` | 设备列表（`?refresh=1` 触发同步） |
+| GET | `/api/v1/devices` | 设备列表（`?refresh=true` 触发同步） |
 | GET | `/api/v1/devices/{uid}` | 设备详情 + 指标 |
 | POST | `/api/v1/devices/{uid}/connect` | 重连该设备（生命周期操作） |
 | POST | `/api/v1/devices/{uid}/disconnect` | 断开该设备 |
@@ -107,6 +107,8 @@ AndroidFileExplorer/
 | GET | `/api/v1/devices/{uid}/files/search?keyword=` | 关键字搜索 |
 | POST | `/api/v1/devices/{uid}/files/pull` | 拉取（设备→落地） |
 | POST | `/api/v1/devices/{uid}/files/push` | 上传（本地→设备） |
+
+> 上表是立项时的接口集；后续新增的机器编辑、文件复制/权限/预览/打包、环境自检等接口以 `docs/api-contract.md` 为准。
 
 ## 7. 里程碑与验收
 

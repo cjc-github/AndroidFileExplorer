@@ -81,6 +81,7 @@
 |---|---|---|
 | `REMOTE_ENGINE_POOL_SIZE` | 4 | 每台远程机器并发命令连接数（连接池封顶） |
 | `STAGING_MAX_AGE_HOURS` | 24 | 落地/暂存文件保留时长（0 = 不清理） |
+| `DEVICE_OFFLINE_THRESHOLD` | 2 | 连续指标失败多少次后把设备标记离线/异常 |
 | `API_AUTH_TOKEN` | （空） | 非空则开启 API 鉴权（见 3.10） |
 
 ### 3.2 数据层（`app/db/session.py` + `app/models/`）
@@ -279,6 +280,9 @@ adb 往返。`getprop` 被刻意排除：真机上 `getprop` **只有作为 shel
 - **`transport_resolver.py`**：`engine_id → Transport` 的工厂 + 缓存。
   解析顺序：显式 host/port（登记前探测）→ 已登记映射 → 本机兜底；
   `127.0.0.1:5037` 直接映射本机传输；远程实例按 `(host,port)` 缓存复用。
+  删除/编辑机器时 `drop_engine` 会注销映射并关闭旧连接，避免继续使用旧密钥。
+- **`preflight.py`**：环境自检（Python / 后端依赖 / asyncssh / adb / 数据目录）。
+  启动时只记录 warning；`adb`、`asyncssh` 属于可选能力，缺失不会阻止后端启动。
 - **`registry.py`**：见 3.6；`sync_transport` 用 **seen_uids 集合**做差分下线；
   `resolve(uid, transport_of)` 把设备记录与其传输实例绑定成 `DeviceContext`。
 - **`file_service.py`**：
@@ -287,14 +291,17 @@ adb 往返。`getprop` 被刻意排除：真机上 `getprop` **只有作为 shel
     是常态，面包屑必须可用。
   - `search`：BFS + 每批 `SEARCH_CONCURRENCY=8` 个目录 **asyncio.gather 并发**；
     跳过伪文件系统 `SKIPPED_ROOTS`（`/proc /sys /dev /vendor /apex ...`）；
-    每目录异常吞噬（权限目录不中断整体搜索）；`max_items=200 / max_depth=4 /
-    max_dirs=400` 限流。全树搜索 6.2s → 0.6s 的来源即「并发 + 跳过 /proc」。
+    每目录异常吞噬（权限目录不中断整体搜索）；`max_items` 默认 200（API 可提高到
+    1000，前端「加载更多」）/ `max_depth=4 / max_dirs=400` 限流。全树搜索
+    6.2s → 0.6s 的来源即「并发 + 跳过 /proc」。
 - **`metrics.py`**：`MetricsCollector` 每设备保存一个 CPU 基线 + 一个缓存样本。
   `/proc/stat` 是累计 jiffy，CPU% = `(1 - Δidle/Δtotal) × 100`（夹在 0..100）；
-  **首次采样返回 `None`**（无基线，不编造 0%）；缓存 TTL 2.5s——前端 3s 轮询
+  **首次采样返回 `None`**（无基线，不编造 0%）；缓存 TTL 2.5s——前端默认 3s 轮询
   周期内同一设备只打一次 shell。**它是进程级全局单例**（`get_metrics_collector`），
   缓存按 uid 命中：写测试时 uid 在用例间相同，必须先 `collector.reset(uid)`，
-  否则命中上一次的缓存导致并发断言假失败。
+  否则命中上一次的缓存导致并发断言假失败。另维护每台设备的连续失败计数
+  （`record_failure` / `record_success`）：可选/权限错误立即降级，离线与通用
+  错误连续 2 次才降级，避免 adbd 重启窗口被误判为离线。
 - **`transfer.py`**：落地文件**唯一命名** `<名>_<12hex>.<后缀>`（两台设备同名
   文件不再互相覆盖，`stored_at` 是真实落地路径）；`_sweep` 过期清理
   （`STAGING_MAX_AGE_HOURS` 默认 24h，0 = 关闭，挂在 `ensure_dirs` 里）；
@@ -303,18 +310,20 @@ adb 往返。`getprop` 被刻意排除：真机上 `getprop` **只有作为 shel
 
 ### 3.10 API 路由层
 
-**engines（`/api/v1/engines`）**：列表（附每机设备数）；新增机器**先登记后探测**，
-探测失败不回滚（返回「机器已登记，但探测失败」）；`test` 现场探测回设备数；
-删除级联删设备记录，`kind=local` 拒绝删除；**`(kind, host, port)` 唯一索引**
-+ API 层重复登记 400（「该机器已登记」），启动时 `init_db` 自动去重旧数据
-（保留最老行、设备重新指向存活行）。
+**engines（`/api/v1/engines`）**：列表（附每机设备数、`has_ssh_password` 布尔）；
+新增机器**先登记后探测**，探测失败不回滚（返回「机器已登记，但探测失败」）；
+`PATCH /{id}` 编辑名称/地址/端口/密钥/SSH 凭据/adb 路径，保留设备记录，密钥与
+密码留空表示不修改，保存后关闭旧 transport 并用新配置重新探测；`test` 现场探测
+回设备数；删除级联删设备记录并清理 transport 缓存，`kind=local` 拒绝删除；
+**`(kind, host, port)` 唯一索引** + API 层重复登记 400（「该机器已登记」），
+启动时 `init_db` 自动去重旧数据（保留最老行、设备重新指向存活行）。
 
 **devices（`/api/v1/devices`）**：
 
 | 路由 | 逻辑要点 |
 |---|---|
-| `GET /` | `refresh=true` 先并发同步所有机器；在线设备的指标采样**并发**（`asyncio.gather`，每任务独立 DB session——共享 session 的写入互撞）；指标走 2.5s 缓存、root 探测走 15s TTL 缓存，结果回写 DB |
-| `GET /{uid}` | 详情 + **强制**重新采样（`force=True` 绕过缓存） |
+| `GET /` | `refresh=true` 先并发同步所有机器；在线设备的指标采样**并发**（`asyncio.gather`，每任务独立 DB session——共享 session 的写入互撞）；指标走 2.5s 缓存、root 探测走 15s TTL 缓存，结果回写 DB；采样失败会把状态降级（permission/unauthorized 立即，offline/通用错误连续 2 次），并支持全量同步恢复 |
+| `GET /{uid}` | 详情 + **强制**重新采样（`force=True` 绕过缓存）；失败同样降级状态 |
 | `GET /{uid}/metrics` | 前端轮询点；异常时改写生命周期（permission_denied / unauthorized / offline） |
 | `PATCH /{uid}` | 改设备别名 |
 | `POST /batch/root` | 多选批量 root/unroot，`asyncio.gather` 并发、逐台返回 `BatchResultItem` |
@@ -326,11 +335,16 @@ adb 往返。`getprop` 被刻意排除：真机上 `getprop` **只有作为 shel
 | 路由 | 逻辑要点 |
 |---|---|
 | `GET ""` | 目录列表；权限错误 → 403（带引导文案「可在路径框输入更深层的可访问路径」），路径级 403 **不改设备生命周期** |
-| `GET /search` | 关键字搜索（复用 FileService.search） |
+| `GET /search` | 关键字搜索（复用 FileService.search）；支持 `limit`（默认 200，最大 1000） |
+| `GET /preview` | 文本 / 图片预览（≤2MB；符号链接和目录拒绝，二进制提示下载） |
 | `GET /download` | 设备 → agent/本机落地 `download_dir`（唯一命名，`stored_at` 为真实落地路径）→ `FileResponse` 以附件形式流给浏览器（锚点 `<a download>`；开启鉴权时锚点把 token 放 query） |
+| `GET /archive` | 目录递归打包 zip（≤200 文件 / 200MB / 6 层，受保护目录与符号链接写入 `_download_errors.txt`） |
+| `POST /archive-selection` | 选中文件 / 目录合并打包 zip，重叠项去重 |
 | `POST /pull` `POST /push` | pull 的字节流最终落在 API 服务器暂存目录（远程链路：设备 → agent 临时目录 → `FILE_PULL` 回传 → 本地落盘），`stored_at` 为真实本地路径；push 后 `stored_at` 写设备目标路径 |
 | `POST /upload` | multipart → **流式落盘 staging**（分块 + 上限校验）→ `adb push` → 暂存文件用后即删 |
 | `POST /mkdir|/rename|/remove` | 透传 transport 通用实现；`mv a a` 前置拒绝（避免设备上 cryptic "Invalid argument"） |
+| `POST /copy` | 设备侧 `cp -r` 复制文件 / 目录 |
+| `POST /permissions` | `chmod`（3~4 位八进制）+ `chown`（owner/group，格式校验） |
 
 **错误映射矩阵**（`_guard` 统一处理）：
 `PermissionDeniedError→403`（状态不变）、`DeviceUnauthorizedError→403`（状态改）、
@@ -338,10 +352,10 @@ adb 往返。`getprop` 被刻意排除：真机上 `getprop` **只有作为 shel
 `no such file→404`、`not a directory→400`、其余 `TransportError→502`。
 
 **生命周期循环（`main.py::_auto_sync_loop`）**：lifespan 启动后台任务，按
-平台设置间隔（0 = 停用，5s 重读配置实现不停机切换）并发 `_sync_all_machines`
-+ `run_auto_root`（设置开启时自动对未 root 的在线设备尝试 root，逐台失败不影响
-其它）。**每个机器的同步任务用独立 DB session**——共享 session 的并发提交会
-互撞（"commit() can't be called here"）。
+平台设置间隔（0 = 停用，5s 重读配置实现不停机切换）执行 `_sync_all_machines`；
+auto-root 钩子在同步末尾执行一次（避免重复重启 adbd，逐台失败不影响其它）。
+**每个机器的同步任务用独立 DB session**——共享 session 的并发提交会互撞
+（"commit() can't be called here"）。
 
 **中间件栈**（`main.py`）——Starlette 的 `add_middleware` 插到 index 0，
 所以**最后添加的最外层**：
@@ -361,6 +375,15 @@ app.add_middleware(CORSMiddleware, ...)       # 最后加 = 最外层
   用五个排列组合逐一实测的结论：`CORS → 请求 ID → 鉴权` 是唯一同时满足
   「preflight 放行」「401 带 ID」「401 带 CORS 头」的顺序。
 
+### 3.11 环境自检（`services/preflight.py` + `routes/system.py`）
+
+- `GET /api/v1/system/check` 返回 `{ok, checks[]}`；每项含
+  `key/label/ok/required/message/fix`。
+- 检查项：Python 版本、后端依赖、asyncssh（可选）、adb 路径/版本/server/设备数
+  （可选）、数据目录写权限。
+- 启动时 `run_checks(deep=False)` 仅记录 warning，不阻塞启动；设置页用完整检查
+  展示修复命令，设备页在 adb 缺失且无设备时给出告警。
+
 ---
 
 ## 4. 前端实现
@@ -379,7 +402,9 @@ app.add_middleware(CORSMiddleware, ...)       # 最后加 = 最外层
 
 ### 4.2 请求层（`api/request.ts`）
 
-- axios 实例 `baseURL: /api/v1`，60s 超时。
+- axios 实例 `baseURL: /api/v1`，默认 60s 超时；上传、下载（含选中项打包）单独
+  设置 `timeout: 0`，避免大文件被客户端提前中断。下载错误响应是 Blob，
+  `extractErrorMessageAsync` 负责解析后展示。
 - **token 引导**（`bootstrapApiToken` IIFE）：首屏若地址栏带 `?token=xxx`，
   写进 `localStorage` 后用 `history.replaceState` 把 token 从地址栏抹掉——
   token 留在 URL 里会被截图、转发、存进浏览器历史。
@@ -395,29 +420,39 @@ app.add_middleware(CORSMiddleware, ...)       # 最后加 = 最外层
 
 - **ErrorBoundary（`components/ErrorBoundary.tsx`）**：包裹路由内容，
   单页渲染崩溃不再白屏——展示错误信息 + 刷新按钮。
-- **DevicesPage**：`refetchInterval = sync_interval_seconds × 1000`（默认 3s，
-  R3）；`hasSyncedRef` 保证**首载自动 `refresh=true`** 同步所有机器，后续轮询走
-  轻量查询；CPU/内存 antd `Progress` 圆环；多选行 → 批量 root；设备名行内改名
-  （`PATCH`）；行内「浏览文件」跳转。
+- **DevicesPage**：`refetchInterval = sync_interval_seconds × 1000`（默认 3s，可配，
+  R3）；首载与每 30 秒做一次全量同步（离线设备可自动恢复），其余轮询走轻量查询；
+  支持按名称/型号/序列号/UID 过滤与排序；CPU/内存 `Progress` 圆环，离线/异常
+  显示对应状态而不是「采样中…」；行级 loading 按当前 uid 区分；批量 root 逐台
+  返回失败原因；设备名行内改名（`PATCH`）；行内「浏览文件」跳转。
 - **FileBrowserPage**：
   - 状态三元组 `path / pathInput / searchMode+keyword`；点击导航与手输路径双向同步。
   - **路径与搜索词同步进 URL**（`validateSearch`）：分享链接直达同一目录、
     浏览器回退可用；URL 变化是唯一事实源，页面状态跟随。
-  - `filesQuery` 的 queryKey 含 `uid+path+keyword`，searchMode 时切换到 search 接口。
-  - 设备详情 3s 轮询驱动在线判断；**加载中 ≠ offline**（`deviceReady` 区分），
+  - `filesQuery` 的 queryKey 含 `uid+path+keyword+limit`，searchMode 时切换到 search 接口。
+  - 设备详情按平台设置轮询驱动在线判断；**加载中 ≠ offline**（`deviceReady` 区分），
     避免 loading 窗口禁用控件掩盖真实原因。
   - 路径直达：`normalizePath` 归一化为绝对 POSIX 路径（未 root 设备必须能跳过
     不可读的父目录直达 `/data/local/tmp`）。
   - 面包屑：后端返回 `parts[{name,path}]`，逐级可点。
   - 越权：403 → `Alert` 展示后端引导文案，`isPermissionError` 时给出「尝试 root」。
-  - 上传 `Upload` 组件 POST multipart；下载用隐藏 `<a>` 锚点点击 download 接口。
+  - 搜索范围可选「当前目录 / 全设备」；结果截断时「加载更多」逐步提高上限
+    （200 → 1000）。
+  - 上传支持多文件顺序上传、单文件进度/取消、覆盖确认（`timeout: 0`）；
+    下载显示进度并可取消，超过 100MB 降级为浏览器直接下载。
+  - 行内「更多」：复制、修改权限（chmod/chown）、文本/图片预览、打包下载；
+    重命名支持目标目录（移动）。名称/时间/大小可排序；摘要显示条目数量。
   - **大目录虚拟滚动**：`Table virtual` + 固定列宽（名称 300，总 x≈1110，
     y=520），数千行目录只渲染视口。
     > ⚠️ 开 `virtual` 后数据行是 `<div class="ant-table-row">`，**不是 `<tr>`**。
     > 按标签名找行的自动化检查会静默失配（只匹配到表头一个 `tr`），
     > 必须按 `.ant-table-row` class 定位——`scripts/file-browser-check.mjs` 踩过这个坑。
-  - **批量删除**：行多选 → 「删除选中 (N)」确认 → `Promise.allSettled` 逐项
-    `/remove`（目录递归），汇总失败数；换路径/搜索时清空选择。
+  - **批量删除**：行多选 → 「删除选中 (N)」确认 → 限并发逐项 `/remove`
+    （目录递归），失败项保留选中并逐项展示原因；换路径/搜索时清空选择。
+  - **批量下载**：多选后调用 `/archive-selection` 打包 zip，显示进度并可取消。
+- **MachinesPage**：机器编辑（保留设备记录、密钥/密码留空不修改）、SSH 密码
+  状态展示、按行测试连接 loading、错误态、首屏 loading。
+- **SettingsPage**：平台设置 + 环境自检卡片（状态/修复命令/重新检查）。
 
 ---
 
@@ -427,7 +462,7 @@ app.add_middleware(CORSMiddleware, ...)       # 最后加 = 最外层
 |---|---|---|
 | 多机器并发同步（asyncio.gather，每机独立 session） | `devices.py::_sync_all_machines` | 请求不再等最慢/死机器 |
 | 设备列表指标并发采样（gather，每任务独立 session） | `devices.py::list_devices` | N 台设备采样 = 最慢一台，不再相加 |
-| root 探测 15s TTL 缓存（`set_root` 后失效） | `base.py::_root_cache` | 3s 轮询不再每次打 `id` |
+| root 探测 15s TTL 缓存（`set_root` 后失效） | `base.py::_root_cache` | 默认 3s 轮询不再每次打 `id` |
 | SQLite WAL + busy_timeout 10s | `db/session.py::_enable_wal` | 并发任务写库不再 `database is locked` |
 | MDD 缓冲读（8KB chunk + 实例级 buffer） | `mdd_client.py` | `recv(1)` 每字节一个 syscall → 协议级读；顺带修掉 `recv(256)` 吞后续数据 |
 | 命令连接池（默认 4 条/机器，封顶不发散） | `remote_engine.py` | 不同设备命令并行，坏连接自愈；push/pull 走专用短连接不占池 |

@@ -91,7 +91,7 @@ GET /api/v1/devices/{uid}/files/download?path=/sdcard/a.bin&token=<token>
 
 ### `GET /api/v1/engines`
 
-返回所有机器。本机是 `kind=local`（`127.0.0.1:5037`），远程引擎是 `kind=remote`。
+返回所有机器。本机是 `kind=local`（`127.0.0.1:5037`）；远程机器是 `kind=remote`（agent）或 `kind=ssh`（SSH 直连）。`has_ssh_password` 只返回布尔值，不回显密码。
 
 ```json
 {
@@ -104,6 +104,7 @@ GET /api/v1/devices/{uid}/files/download?path=/sdcard/a.bin&token=<token>
       "port": 5037,
       "kind": "local",
       "status": "connected",
+      "has_ssh_password": false,
       "last_error": null,
       "last_seen": "2026-11-10T01:15:59.074637",
       "created_at": "2026-11-10T01:15:59.074637",
@@ -465,9 +466,9 @@ GET /api/v1/devices/{uid}/files/download?path=/sdcard/a.bin&token=<token>
 
 请求体与响应同结构。保存后**立即生效**，无需重启：
 
-- `sync_interval_seconds`：前台设备列表轮询间隔（1–60 秒）。
-- `auto_sync_seconds`：后台自动同步间隔（0 = 只手动同步）。
-- `auto_root`：同步后是否自动对未 root 的在线设备执行 `adb root`。
+- `sync_interval_seconds`：设备页 / 文件选择页 / 文件浏览页的状态刷新间隔（1–60 秒）。
+- `auto_sync_seconds`：后台自动同步间隔；0 = 后台不周期探测（页面打开期间仍会做恢复性同步，也可手动「同步」）。
+- `auto_root`：每次同步后是否自动对未 root 的在线设备执行 `adb root`（每个同步周期只执行一次）。
 
 ---
 
@@ -476,10 +477,10 @@ GET /api/v1/devices/{uid}/files/download?path=/sdcard/a.bin&token=<token>
 | 状态 | 含义 | 进入条件 |
 |---|---|---|
 | `online` | 设备在线且已授权 | `adb devices` 报告 `device` |
-| `offline` | 设备掉线 | 从设备清单消失 / 主动断开 / adb 报 offline |
+| `offline` | 设备掉线 | 从设备清单消失 / 主动断开 / adb 报 offline / 连续指标失败达到阈值 |
 | `unauthorized` | 设备未授权调试 | `adb devices` 报告 `unauthorized` |
 | `permission_denied` | 设备级权限不足 | 指标采集等设备级操作被拒 |
-| `error` | 其他异常 | 未知 adb 状态 |
+| `error` | 其他异常 | 未知 adb 状态 / 连续通用指标失败达到阈值 |
 
 ```
         ┌──────────── 心跳失败 / 从清单消失 ───────────┐

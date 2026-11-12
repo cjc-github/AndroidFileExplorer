@@ -37,7 +37,7 @@
 
 ### 3. 运行状态轮询
 
-- [x] 前台每 3 秒刷新设备运行状态
+- [x] 前台按平台设置刷新设备运行状态（默认 3 秒）
 - [x] CPU 使用率（圆形进度条）
 - [x] CPU 硬件信息：核心数（/proc/cpuinfo）+ 最高频率（cpufreq sysfs，垃圾值防御）+ SoC 平台（ro.board.platform），圆环下方副标题展示，模拟器无有效值时正确留空
 - [x] 内存使用率 + 已用 / 总量（圆环下方上下排列）
@@ -165,6 +165,15 @@
 > **注意**：antd Table 开 `virtual` 后数据行是 `<div class="ant-table-row">` 而非 `<tr>`。
 > 按标签名找行的检查脚本会静默失配（只匹配到表头），
 > 必须按 `.ant-table-row` class 定位。
+
+### 交付前实测记录（2026-11-12）
+
+| 检查 | 手段 | 结果 |
+|---|---|---|
+| 环境自检 | `GET /api/v1/system/check` + 设置页真实浏览器渲染 | 通过 |
+| 渲染门禁 | `scripts/render-check.sh` | 5 页 50 项断言全 PASS |
+| 带设备渲染 | `scripts/render_check_with_device.py` | 5 页 54 项断言全 PASS |
+| 门禁 | `scripts/verify.sh` 六步 | 6/6 |
 
 ---
 
