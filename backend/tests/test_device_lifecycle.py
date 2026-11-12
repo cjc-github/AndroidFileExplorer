@@ -132,3 +132,33 @@ def test_network_devices_are_flagged(client):
     run_sync(_run())
     devices = client.get("/api/v1/devices").json()["data"]
     assert devices[0]["is_network_device"] is False
+
+
+def test_two_metric_failures_downgrade_offline_and_refresh_recovers(client, monkeypatch):
+    """The UI polls with refresh=false; a vanished device must not stay online."""
+    from app.transports.base import DeviceOfflineError
+
+    uid = _seed(client)
+    transport = client.transport
+    from app.state import get_metrics_collector
+
+    # The collector is process-wide and keyed by uid; a cached sample from
+    # another test would hide the failure.
+    get_metrics_collector().reset(uid)
+
+    async def _offline(_serial):
+        raise DeviceOfflineError("device offline")
+
+    monkeypatch.setattr(transport, "metrics", _offline)
+    # One miss is debounced (adbd restarts after root); two consecutive
+    # failures are enough to show the device as offline.
+    first = client.get("/api/v1/devices").json()["data"]
+    assert first[0]["status"] == "online"
+    listing = client.get("/api/v1/devices").json()["data"]
+    assert listing[0]["status"] == "offline"
+
+    # A full discovery pass uses the real (fake) device list again and the
+    # device comes back without a restart.
+    monkeypatch.undo()
+    refresh = client.get("/api/v1/devices", params={"refresh": "true"}).json()["data"]
+    assert refresh[0]["status"] == "online"

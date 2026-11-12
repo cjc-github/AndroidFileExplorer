@@ -41,12 +41,29 @@ class MetricsCollector:
     def __init__(self, cache_ttl: float = DEFAULT_CACHE_TTL) -> None:
         self._baselines: dict[str, _CpuBaseline] = {}
         self._cache: dict[str, _CachedSample] = {}
+        self._failures: dict[str, int] = {}
         self._cache_ttl = cache_ttl
 
     def reset(self, uid: str) -> None:
         """Forget the baseline of a device (e.g. after a reconnect)."""
         self._baselines.pop(uid, None)
         self._cache.pop(uid, None)
+        self._failures.pop(uid, None)
+
+    def record_failure(self, uid: str) -> int:
+        """Count one failed sample and return the current streak.
+
+        A single failed shell must not flip the UI to offline: transient
+        errors happen while adbd restarts.  The routes use the streak to
+        downgrade the device state only after repeated failures.
+        """
+        streak = self._failures.get(uid, 0) + 1
+        self._failures[uid] = streak
+        return streak
+
+    def record_success(self, uid: str) -> None:
+        """A successful sample ends the failure streak."""
+        self._failures.pop(uid, None)
 
     def cached(self, uid: str) -> MetricsSample | None:
         """Return the cached sample of a device if it is still fresh."""
@@ -71,6 +88,7 @@ class MetricsCollector:
                 return cached
 
         sample = await transport.metrics(serial)
+        self.record_success(uid)
 
         total = sample.raw_total_jiffies
         idle = sample.raw_idle_jiffies

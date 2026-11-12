@@ -55,6 +55,40 @@ def _to_metrics(sample) -> DeviceMetrics:
     )
 
 
+#: How many consecutive metric failures flip the device state.  Unauthorized
+#: and permission errors are applied immediately; offline / generic errors are
+#: debounced because a single miss happens while adbd restarts after root.
+METRICS_FAILURE_THRESHOLD = 2
+
+
+async def _apply_metrics_failure(
+    db: AsyncSession, device, collector: MetricsCollector, exc: Exception
+) -> None:
+    """Reflect a failed sample in the lifecycle column shown by the UI.
+
+    The foreground list polls with ``refresh=false``, so the registry must
+    downgrade a device that stopped answering.  Otherwise a removed phone
+    stays "online" in the table until the user presses 同步 manually.
+    """
+    registry = DeviceRegistry(db)
+    if isinstance(exc, PermissionDeniedError):
+        await registry.mark_status(device, DeviceState.PERMISSION_DENIED.value, str(exc))
+    elif isinstance(exc, DeviceUnauthorizedError):
+        await registry.mark_status(device, DeviceState.UNAUTHORIZED.value, str(exc))
+    else:
+        # Offline and generic failures are debounced: a single miss happens
+        # while adbd restarts after root/unroot, and flipping the UI then
+        # would be misleading.
+        streak = collector.record_failure(device.uid)
+        if streak >= METRICS_FAILURE_THRESHOLD:
+            state = (
+                DeviceState.OFFLINE.value
+                if isinstance(exc, DeviceOfflineError)
+                else DeviceState.ERROR.value
+            )
+            await registry.mark_status(device, state, str(exc))
+
+
 async def _local_engine_id(db: AsyncSession) -> int | None:
     """Best effort lookup of the local engine row id."""
     from sqlalchemy import select
@@ -255,6 +289,7 @@ async def _device_with_metrics(
         return _to_device_info(device, _to_metrics(sample))
     except (TransportError, PermissionDeniedError) as exc:
         logger.warning(f"metrics unavailable for {device.uid}: {exc}")
+        await _apply_metrics_failure(db, device, collector, exc)
         return _to_device_info(device)
 
 
@@ -281,6 +316,7 @@ async def get_device_detail(
             metrics = _to_metrics(sample)
         except (TransportError, PermissionDeniedError) as exc:
             logger.warning(f"metrics failed for {uid}: {exc}")
+            await _apply_metrics_failure(db, record, collector, exc)
 
     return BaseResponse.success(_to_device_info(record, metrics))
 
