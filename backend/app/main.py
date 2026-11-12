@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.auth import AuthTokenMiddleware
 from app.api.request_id import RequestIdMiddleware
-from app.api.routes import devices, engines, files
+from app.api.routes import devices, engines, files, system
 from app.api.routes import settings as settings_routes
 from app.config import settings
 from app.core.response import BaseResponse
@@ -63,6 +63,18 @@ async def _auto_sync_loop() -> None:
 async def lifespan(app: FastAPI):
     """Prepare the database and the local engine row."""
     settings.ensure_dirs()
+
+    # Log the environment prerequisites without blocking startup: a machine
+    # that only uses remote engines does not need a local adb.
+    from app.services.preflight import run_checks
+
+    try:
+        for item in await asyncio.to_thread(run_checks, False):
+            if not item["ok"]:
+                logger.warning(f"环境自检: {item['label']} - {item['message']}")
+    except Exception:  # noqa: BLE001 - diagnostics must not block startup
+        logger.exception("环境自检失败")
+
     await init_db()
     logger.info("Database initialized")
 
@@ -114,6 +126,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(system.router)
 app.include_router(engines.router)
 app.include_router(settings_routes.router)
 app.include_router(devices.router)

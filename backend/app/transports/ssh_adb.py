@@ -26,7 +26,10 @@ import shlex
 import uuid
 from pathlib import Path
 
-import asyncssh
+try:  # SSH direct mode is optional; the self-contained agent does not need it.
+    import asyncssh
+except ImportError:  # pragma: no cover - exercised by the dependency check
+    asyncssh = None  # type: ignore[assignment]
 
 from app.logger import logger
 from app.transports.base import (
@@ -76,6 +79,10 @@ class SshAdbTransport(Transport):
     # ------------------------------------------------------------ connection
 
     async def _connection(self) -> asyncssh.SSHClientConnection:
+        if asyncssh is None:
+            raise TransportError(
+                "SSH 直连需要 Python 包 asyncssh：pip install asyncssh"
+            )
         async with self._lock:
             if self._conn is not None:
                 return self._conn
