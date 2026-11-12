@@ -149,7 +149,9 @@ class SshAdbTransport(Transport):
         return await self._run(self._adb_args(args), timeout)
 
     async def _adb_shell(self, serial: str, command: str, timeout: float | None = None) -> str:
-        return await self._adb(f"-s {shlex.quote(serial)} shell {command}", timeout)
+        return await self._adb(
+            f"-s {shlex.quote(serial)} shell {shlex.quote(command)}", timeout
+        )
 
     # ------------------------------------------------------ abstract methods
 

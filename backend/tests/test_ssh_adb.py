@@ -20,6 +20,7 @@ from app.transports.ssh_adb import SshAdbTransport
 FAKE_DEVICES = (
     "List of devices attached\nFAKE123\tdevice product:f model:Fake_X device:f\n"
 )
+SEEN_COMMANDS: list[str] = []
 
 
 class FakeAdbServer(asyncssh.SSHServer):
@@ -37,6 +38,7 @@ class FakeAdbServer(asyncssh.SSHServer):
 
 async def _handle_client(process) -> None:
     command = process.command or ""
+    SEEN_COMMANDS.append(command)
     if command == "adb devices -l":
         process.stdout.write(FAKE_DEVICES)
     elif command.startswith("adb -s FAKE123 shell "):
@@ -48,6 +50,7 @@ async def _handle_client(process) -> None:
 
 @pytest_asyncio.fixture
 async def ssh_port():
+    SEEN_COMMANDS.clear()
     host_key = asyncssh.generate_private_key("ssh-ed25519")
     server = await asyncssh.listen(
         "127.0.0.1",
@@ -102,4 +105,12 @@ async def test_shell_runs_over_the_ssh_channel(ssh_port):
     transport = _transport(ssh_port, "secret")
     output = await transport.shell("FAKE123", "echo hi")
     assert "FAKE-SHELL-OK" in output
+    await transport.close()
+
+
+@pytest.mark.asyncio
+async def test_shell_metacharacters_reach_the_device_shell(ssh_port):
+    transport = _transport(ssh_port, "secret")
+    await transport.shell("FAKE123", "echo hi; echo bye")
+    assert SEEN_COMMANDS[-1] == "adb -s FAKE123 shell 'echo hi; echo bye'"
     await transport.close()
