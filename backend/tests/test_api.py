@@ -240,6 +240,9 @@ def test_metrics_endpoint_returns_cpu_and_memory(client):
     metrics = response.json()["data"]
     assert metrics["memory_total_bytes"] == 1024 * 1024 * 1024
     assert metrics["memory_percent"] == 50.0
+    assert metrics["cpu_current_freq_khz"] == 1_800_000
+    assert [item["path"] for item in metrics["storage"]] == ["/data", "/sdcard"]
+    assert metrics["storage"][0]["total_bytes"] == 100 * 1024 * 1024 * 1024
     assert "cpu_percent" in metrics
 
 

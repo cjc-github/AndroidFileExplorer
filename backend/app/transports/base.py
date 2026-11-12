@@ -57,6 +57,11 @@ class DeviceState(str, Enum):
 PROCFS_MARKER = "---AFE---"
 #: Second marker: the device property section follows the procfs payloads.
 PROPS_MARKER = "---AFEPROPS---"
+#: Third marker: the live CPU frequency section follows the load average.
+FREQ_MARKER = "---AFEFREQ---"
+#: Fourth / fifth markers: the two storage samples follow the frequency.
+STORAGE_DATA_MARKER = "---AFESTORAGEDATA---"
+STORAGE_SDCARD_MARKER = "---AFESTORAGESDCARD---"
 
 #: The single shell round trip that collects the procfs metrics.
 #:
@@ -69,7 +74,16 @@ METRICS_COMMAND = (
     f"echo '{PROCFS_MARKER}'; "
     "cat /proc/meminfo; "
     f"echo '{PROPS_MARKER}'; "
-    "cat /proc/loadavg"
+    "cat /proc/loadavg; "
+    f"echo '{FREQ_MARKER}'; "
+    "cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq 2>/dev/null; "
+    f"echo '{STORAGE_DATA_MARKER}'; "
+    "df -k /data 2>/dev/null; "
+    f"echo '{STORAGE_SDCARD_MARKER}'; "
+    # The optional cpufreq / storage probes must not fail the whole sample;
+    # keep the loadavg read as the final status sentinel.
+    "df -k /sdcard 2>/dev/null; "
+    "cat /proc/loadavg >/dev/null"
 )
 
 #: Separate command for the device brand (must be the only command).
@@ -176,8 +190,18 @@ class FileEntry:
 
 
 @dataclass(slots=True)
+class StorageSample:
+    """Free / used blocks of one mount point (1K blocks already converted)."""
+
+    path: str
+    total_bytes: int | None = None
+    used_bytes: int | None = None
+    available_bytes: int | None = None
+
+
+@dataclass(slots=True)
 class MetricsSample:
-    """One CPU / memory sample of a device."""
+    """One CPU / memory / storage sample of a device."""
 
     cpu_percent: float | None = None
     cpu_user_percent: float | None = None
@@ -186,6 +210,10 @@ class MetricsSample:
     memory_available_bytes: int | None = None
     memory_used_bytes: int | None = None
     memory_percent: float | None = None
+    cpu_current_freq_khz: int | None = None
+    """Average live frequency of the CPU cores (cpufreq scaling_cur_freq)."""
+    storage: tuple[StorageSample, ...] = ()
+    """Usage of /data and /sdcard."""
     load_average: tuple[float, float, float] | None = None
     uptime_seconds: float | None = None
     sampled_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -942,11 +970,41 @@ class Transport(ABC):
         return None
 
 
+def _parse_df(raw: str, path: str) -> StorageSample | None:
+    """Parse one ``df -k`` output into a StorageSample.
+
+    Toybox and busybox both emit ``Filesystem 1K-blocks Used Available ...``;
+    the header fails the integer conversion and is skipped naturally.
+    """
+    for line in raw.splitlines():
+        fields = line.split()
+        if len(fields) < 4:
+            continue
+        try:
+            total = int(fields[1])
+            used = int(fields[2])
+            available = int(fields[3])
+        except ValueError:
+            continue
+        if total <= 0:
+            continue
+        return StorageSample(
+            path=path,
+            total_bytes=total * 1024,
+            used_bytes=used * 1024,
+            available_bytes=available * 1024,
+        )
+    return None
+
+
 def parse_metrics(raw: str) -> MetricsSample:
     """Parse the combined ``/proc/stat`` + ``/proc/meminfo`` payload."""
     sample = MetricsSample()
     stat_part, _, remainder = raw.partition(PROCFS_MARKER)
-    mem_part, _, props_part = remainder.partition(PROPS_MARKER)
+    mem_part, _, remainder = remainder.partition(PROPS_MARKER)
+    props_part, _, freq_part = remainder.partition(FREQ_MARKER)
+    freq_part, _, storage_part = freq_part.partition(STORAGE_DATA_MARKER)
+    data_part, _, sdcard_part = storage_part.partition(STORAGE_SDCARD_MARKER)
 
     cpu_line: str | None = None
     for line in stat_part.splitlines():
@@ -996,6 +1054,24 @@ def parse_metrics(raw: str) -> MetricsSample:
             sample.memory_available_bytes = mem_available
             sample.memory_used_bytes = max(0, mem_total - mem_available)
             sample.memory_percent = round(sample.memory_used_bytes / mem_total * 100, 2)
+
+    # cpufreq scaling_cur_freq is in kHz, one line per core.  A missing
+    # cpufreq (emulators) or a bogus value below 100 MHz reports None.
+    freq_values = [
+        int(line.strip())
+        for line in freq_part.splitlines()
+        if line.strip().isdigit()
+    ]
+    freq_values = [value for value in freq_values if value >= 100_000]
+    if freq_values:
+        sample.cpu_current_freq_khz = round(sum(freq_values) / len(freq_values))
+
+    storage = []
+    for path, payload in (("/data", data_part), ("/sdcard", sdcard_part)):
+        parsed = _parse_df(payload, path)
+        if parsed is not None:
+            storage.append(parsed)
+    sample.storage = tuple(storage)
 
     # /proc/loadavg -> "0.00 0.02 0.13 1/1284 6607"
     load_values = props_part.strip().split()

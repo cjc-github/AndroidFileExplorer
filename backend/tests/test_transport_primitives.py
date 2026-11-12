@@ -169,6 +169,17 @@ def test_parse_metrics_reads_procfs():
         "MemTotal:        2048000 kB\n"
         "MemFree:          512000 kB\n"
         "MemAvailable:    1024000 kB\n"
+        "---AFEPROPS---\n"
+        "0.00 0.02 0.13 1/1284 6607\n"
+        "---AFEFREQ---\n"
+        "1800000\n"
+        "2400000\n"
+        "---AFESTORAGEDATA---\n"
+        "Filesystem       1K-blocks     Used Available Use% Mounted on\n"
+        "/dev/block/dm-1    1000000   400000    600000  40% /data\n"
+        "---AFESTORAGESDCARD---\n"
+        "Filesystem       1K-blocks     Used Available Use% Mounted on\n"
+        "/dev/block/dm-2     500000   100000    400000  20% /storage/emulated\n"
     )
     sample = parse_metrics(raw)
     assert sample.raw_total_jiffies == 560
@@ -177,6 +188,12 @@ def test_parse_metrics_reads_procfs():
     assert sample.memory_available_bytes == 1024000 * 1024
     assert sample.memory_used_bytes == 1024000 * 1024
     assert sample.memory_percent == 50.0
+    assert sample.load_average == (0.0, 0.02, 0.13)
+    assert sample.cpu_current_freq_khz == 2100000
+    assert [item.path for item in sample.storage] == ["/data", "/sdcard"]
+    assert sample.storage[0].total_bytes == 1000000 * 1024
+    assert sample.storage[0].used_bytes == 400000 * 1024
+    assert sample.storage[1].available_bytes == 400000 * 1024
 
 
 class _CountingTransport(Transport):

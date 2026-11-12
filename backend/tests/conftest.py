@@ -25,6 +25,7 @@ from app.transports.base import (  # noqa: E402
     FileEntry,
     MetricsSample,
     PermissionDeniedError,
+    StorageSample,
     TransferResult,
     Transport,
 )
@@ -106,6 +107,21 @@ class FakeTransport(Transport):
         sample.memory_available_bytes = 512 * 1024 * 1024
         sample.memory_used_bytes = 512 * 1024 * 1024
         sample.memory_percent = 50.0
+        sample.cpu_current_freq_khz = 1_800_000
+        sample.storage = (
+            StorageSample(
+                path="/data",
+                total_bytes=100 * 1024 * 1024 * 1024,
+                used_bytes=40 * 1024 * 1024 * 1024,
+                available_bytes=60 * 1024 * 1024 * 1024,
+            ),
+            StorageSample(
+                path="/sdcard",
+                total_bytes=50 * 1024 * 1024 * 1024,
+                used_bytes=10 * 1024 * 1024 * 1024,
+                available_bytes=40 * 1024 * 1024 * 1024,
+            ),
+        )
         return sample
 
 

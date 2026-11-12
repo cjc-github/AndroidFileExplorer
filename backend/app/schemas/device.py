@@ -91,8 +91,17 @@ class EngineTestResult(BaseModel):
     device_count: int = 0
 
 
+class StorageInfo(BaseModel):
+    """Usage of one mount point (bytes)."""
+
+    path: str
+    total_bytes: int | None = None
+    used_bytes: int | None = None
+    available_bytes: int | None = None
+
+
 class DeviceMetrics(BaseModel):
-    """CPU / memory snapshot of one device."""
+    """CPU / memory / storage snapshot of one device."""
 
     cpu_percent: float | None = None
     cpu_user_percent: float | None = None
@@ -101,6 +110,8 @@ class DeviceMetrics(BaseModel):
     memory_available_bytes: int | None = None
     memory_used_bytes: int | None = None
     memory_percent: float | None = None
+    cpu_current_freq_khz: int | None = None
+    storage: list[StorageInfo] | None = None
     load_average: list[float] | None = None
     sampled_at: datetime
 

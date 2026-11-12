@@ -20,6 +20,7 @@ from app.schemas.device import (
     DeviceInfo,
     DeviceMetrics,
     DevicePage,
+    StorageInfo,
 )
 from app.services.metrics import MetricsCollector
 from app.schemas.settings import SettingsInfo
@@ -53,6 +54,17 @@ def _to_metrics(sample) -> DeviceMetrics:
         memory_available_bytes=sample.memory_available_bytes,
         memory_used_bytes=sample.memory_used_bytes,
         memory_percent=sample.memory_percent,
+        cpu_current_freq_khz=sample.cpu_current_freq_khz,
+        storage=[
+            StorageInfo(
+                path=item.path,
+                total_bytes=item.total_bytes,
+                used_bytes=item.used_bytes,
+                available_bytes=item.available_bytes,
+            )
+            for item in sample.storage
+        ]
+        or None,
         load_average=list(sample.load_average) if sample.load_average else None,
         sampled_at=sample.sampled_at,
     )
