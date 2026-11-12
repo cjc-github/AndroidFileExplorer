@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
+  Alert,
   Button,
   Empty,
   Input,
@@ -11,11 +12,13 @@ import {
 } from "antd";
 import type { TableProps } from "antd";
 import { FolderOpenOutlined, SearchOutlined } from "@ant-design/icons";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { getDeviceList } from "@/api";
+import { extractErrorMessage } from "@/api/request";
 import type { Device } from "@/api/types";
 import { deviceStatusColor, deviceStatusLabel } from "@/api/status";
+import { useRefreshInterval } from "@/hooks/useRefreshInterval";
 import { formatTime } from "@/utils/format";
 
 /**
@@ -27,17 +30,30 @@ import { formatTime } from "@/utils/format";
 export function FileBrowserPickerPage() {
   const navigate = useNavigate();
   const [keyword, setKeyword] = useState("");
+  const pollMs = useRefreshInterval();
+  const hasSyncedRef = useRef(false);
+  const lastFullSyncRef = useRef(0);
 
   const devicesQuery = useQuery({
     queryKey: ["devices"],
-    queryFn: () => getDeviceList(true),
-    refetchInterval: 5000,
+    queryFn: () => {
+      // Full discovery once, then the cheap list poll: the picker used to
+      // re-probe every machine every 5 seconds (and trigger auto-root).
+      const now = Date.now();
+      if (!hasSyncedRef.current || now - lastFullSyncRef.current >= 30_000) {
+        hasSyncedRef.current = true;
+        lastFullSyncRef.current = now;
+        return getDeviceList(true);
+      }
+      return getDeviceList(false);
+    },
+    refetchInterval: pollMs,
   });
 
   const devices = devicesQuery.data ?? [];
   const filtered = keyword.trim()
     ? devices.filter((device) =>
-        [device.model, device.serial, device.uid]
+        [device.alias, device.model, device.brand, device.serial, device.uid]
           .filter(Boolean)
           .some((field) => field!.toLowerCase().includes(keyword.trim().toLowerCase())),
       )
@@ -53,9 +69,12 @@ export function FileBrowserPickerPage() {
       key: "device",
       render: (_, record) => (
         <Space direction="vertical" size={0}>
-          <Typography.Text strong>{record.model ?? record.serial}</Typography.Text>
+          <Typography.Text strong>
+            {record.alias ?? record.model ?? record.serial}
+          </Typography.Text>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             {record.serial}
+            {record.brand ? ` · ${record.brand}` : ""}
           </Typography.Text>
         </Space>
       ),
@@ -120,23 +139,44 @@ export function FileBrowserPickerPage() {
         <Input
           allowClear
           prefix={<SearchOutlined />}
-          placeholder="按型号 / 序列号 / UID 过滤"
+          placeholder="按型号 / 序列号 / UID 过滤；也支持名称 / 品牌"
           style={{ width: 280 }}
           value={keyword}
           onChange={(event) => setKeyword(event.target.value)}
         />
       </Space>
 
+      {devicesQuery.isError ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="设备列表加载失败"
+          description={extractErrorMessage(devicesQuery.error)}
+          action={
+            <Button size="small" onClick={() => devicesQuery.refetch()}>
+              重试
+            </Button>
+          }
+        />
+      ) : null}
+
       <Table
         rowKey="uid"
         size="small"
         dataSource={filtered}
         columns={columns}
-        loading={devicesQuery.isFetching}
+        loading={devicesQuery.isPending}
         pagination={false}
         locale={{
           emptyText: (
-            <Empty description="没有可浏览的设备。请先在「远程机器」登记机器并确保其上有设备在线" />
+            <Empty
+              description={
+                keyword.trim()
+                  ? "没有匹配的设备"
+                  : "没有可浏览的设备。请先在「远程机器」登记机器并确保其上有设备在线"
+              }
+            />
           ),
         }}
       />

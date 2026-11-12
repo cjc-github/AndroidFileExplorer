@@ -1,7 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Button, Card, Form, InputNumber, Switch, Typography } from "antd";
+import {
+  Alert,
+  App,
+  Button,
+  Card,
+  Form,
+  InputNumber,
+  Switch,
+  Typography,
+} from "antd";
 
 import { getSettings, updateSettings } from "@/api";
+import { extractErrorMessage } from "@/api/request";
 
 export function SettingsPage() {
   const { message } = App.useApp();
@@ -34,6 +44,21 @@ export function SettingsPage() {
         保存后立即生效，无需重启后端。
       </Typography.Paragraph>
 
+      {settingsQuery.isError ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="设置加载失败"
+          description={extractErrorMessage(settingsQuery.error)}
+          action={
+            <Button size="small" onClick={() => settingsQuery.refetch()}>
+              重试
+            </Button>
+          }
+        />
+      ) : null}
+
       {values ? (
         <Form
           form={form}
@@ -44,7 +69,7 @@ export function SettingsPage() {
           <Form.Item
             name="sync_interval_seconds"
             label="设备列表刷新间隔（秒）"
-            extra="设备资源页运行状态（CPU / 内存）的自动刷新周期，1–60 秒"
+            extra="设备资源页、文件选择页和文件浏览页的设备状态刷新周期，1–60 秒"
             rules={[{ required: true, message: "请输入刷新间隔" }]}
           >
             <InputNumber min={1} max={60} style={{ width: 160 }} />
@@ -53,7 +78,7 @@ export function SettingsPage() {
           <Form.Item
             name="auto_sync_seconds"
             label="自动同步间隔（秒）"
-            extra="后台自动发现设备的周期；0 表示只在点击「同步」按钮时刷新"
+            extra="后台自动发现设备的周期；0 表示后台不再周期探测（设备页/文件选择页打开期间仍会做恢复性同步，也可点击「同步」手动刷新）"
             rules={[{ required: true, message: "请输入自动同步间隔" }]}
           >
             <InputNumber min={0} max={86400} style={{ width: 160 }} />
