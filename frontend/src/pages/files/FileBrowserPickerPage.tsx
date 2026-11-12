@@ -12,9 +12,9 @@ import {
 } from "antd";
 import type { TableProps } from "antd";
 import { FolderOpenOutlined, SearchOutlined } from "@ant-design/icons";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { getDeviceList } from "@/api";
+import { getDevicePage } from "@/api";
 import { extractErrorMessage } from "@/api/request";
 import type { Device } from "@/api/types";
 import { deviceStatusColor, deviceStatusLabel } from "@/api/status";
@@ -30,34 +30,42 @@ import { formatTime } from "@/utils/format";
 export function FileBrowserPickerPage() {
   const navigate = useNavigate();
   const [keyword, setKeyword] = useState("");
+  const [debouncedKeyword, setDebouncedKeyword] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const pollMs = useRefreshInterval();
   const hasSyncedRef = useRef(false);
   const lastFullSyncRef = useRef(0);
 
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedKeyword(keyword.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [keyword]);
+
   const devicesQuery = useQuery({
-    queryKey: ["devices"],
+    queryKey: ["devices", page, pageSize, debouncedKeyword],
     queryFn: () => {
       // Full discovery once, then the cheap list poll: the picker used to
       // re-probe every machine every 5 seconds (and trigger auto-root).
       const now = Date.now();
-      if (!hasSyncedRef.current || now - lastFullSyncRef.current >= 30_000) {
+      const fullSync =
+        !hasSyncedRef.current || now - lastFullSyncRef.current >= 30_000;
+      if (fullSync) {
         hasSyncedRef.current = true;
         lastFullSyncRef.current = now;
-        return getDeviceList(true);
       }
-      return getDeviceList(false);
+      return getDevicePage({
+        page,
+        pageSize,
+        keyword: debouncedKeyword,
+        refresh: fullSync,
+      });
     },
     refetchInterval: pollMs,
+    placeholderData: (previous) => previous,
   });
 
-  const devices = devicesQuery.data ?? [];
-  const filtered = keyword.trim()
-    ? devices.filter((device) =>
-        [device.alias, device.model, device.brand, device.serial, device.uid]
-          .filter(Boolean)
-          .some((field) => field!.toLowerCase().includes(keyword.trim().toLowerCase())),
-      )
-    : devices;
+  const devices = devicesQuery.data?.items ?? [];
 
   const openBrowser = (device: Device) => {
     navigate({ to: "/devices/$uid/files", params: { uid: device.uid } });
@@ -142,7 +150,10 @@ export function FileBrowserPickerPage() {
           placeholder="按型号 / 序列号 / UID 过滤；也支持名称 / 品牌"
           style={{ width: 280 }}
           value={keyword}
-          onChange={(event) => setKeyword(event.target.value)}
+          onChange={(event) => {
+            setKeyword(event.target.value);
+            setPage(1);
+          }}
         />
       </Space>
 
@@ -164,10 +175,28 @@ export function FileBrowserPickerPage() {
       <Table
         rowKey="uid"
         size="small"
-        dataSource={filtered}
+        dataSource={devices}
         columns={columns}
         loading={devicesQuery.isPending}
-        pagination={false}
+        pagination={{
+          current: page,
+          pageSize,
+          total: devicesQuery.data?.total ?? 0,
+          showSizeChanger: true,
+          pageSizeOptions: [10, 20, 50, 100],
+          showTotal: (total, range) =>
+            range[0] === range[1]
+              ? `第 ${range[0]} 台 / 共 ${total} 台`
+              : `${range[0]}-${range[1]} / 共 ${total} 台`,
+          onChange: (nextPage, nextPageSize) => {
+            if (nextPageSize !== pageSize) {
+              setPageSize(nextPageSize);
+              setPage(1);
+              return;
+            }
+            setPage(nextPage);
+          },
+        }}
         locale={{
           emptyText: (
             <Empty

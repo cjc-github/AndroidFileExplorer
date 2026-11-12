@@ -3,6 +3,7 @@ import type { AxiosProgressEvent } from "axios";
 import type {
   Device,
   DeviceMetrics,
+  DevicePage,
   Engine,
   EnvironmentCheckResult,
   FileList,
@@ -17,6 +18,37 @@ import { request, unwrap } from "./request";
 export const getDeviceList = (refresh = false) =>
   unwrap<Device[]>(
     request.get("/devices", { params: refresh ? { refresh: "true" } : undefined }),
+  );
+
+export interface DevicePageQuery {
+  page: number;
+  pageSize: number;
+  keyword?: string;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+  refresh?: boolean;
+}
+
+/** One page of devices; metrics are only sampled for the returned rows. */
+export const getDevicePage = ({
+  page,
+  pageSize,
+  keyword,
+  sortBy,
+  sortOrder,
+  refresh = false,
+}: DevicePageQuery) =>
+  unwrap<DevicePage>(
+    request.get("/devices", {
+      params: {
+        page,
+        page_size: pageSize,
+        keyword: keyword?.trim() || undefined,
+        sort_by: sortBy || undefined,
+        sort_order: sortOrder,
+        ...(refresh ? { refresh: "true" } : {}),
+      },
+    }),
   );
 
 /** One device with a fresh metric sample. */

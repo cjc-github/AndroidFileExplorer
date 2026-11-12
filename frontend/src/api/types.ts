@@ -10,6 +10,13 @@ export const DeviceStatus = {
 
 export type DeviceStatus = (typeof DeviceStatus)[keyof typeof DeviceStatus];
 
+export interface DeviceStorage {
+  path: string;
+  total_bytes: number | null;
+  used_bytes: number | null;
+  available_bytes: number | null;
+}
+
 export interface DeviceMetrics {
   cpu_percent: number | null;
   cpu_user_percent: number | null;
@@ -18,6 +25,8 @@ export interface DeviceMetrics {
   memory_available_bytes: number | null;
   memory_used_bytes: number | null;
   memory_percent: number | null;
+  cpu_current_freq_khz: number | null;
+  storage: DeviceStorage[] | null;
   load_average: number[] | null;
   sampled_at: string;
 }
@@ -47,6 +56,13 @@ export interface Device {
   created_at: string;
   updated_at: string;
   metrics: DeviceMetrics | null;
+}
+
+export interface DevicePage {
+  items: Device[];
+  total: number;
+  page: number;
+  page_size: number;
 }
 
 export interface PlatformSettings {
