@@ -45,6 +45,11 @@ class EngineRecord(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
 
+    @property
+    def has_ssh_password(self) -> bool:
+        """Whether an SSH password is stored (the value never leaves the API)."""
+        return bool(self.ssh_password)
+
 
 class DeviceRecord(SQLModel, table=True):
     """One Android device, bound to a machine by its stable unique id."""

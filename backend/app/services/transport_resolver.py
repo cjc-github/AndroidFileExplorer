@@ -77,6 +77,52 @@ class TransportResolver:
             adb_path=adb_path,
         )
 
+    async def drop_engine(self, engine_id: int) -> None:
+        """Forget one machine and close its cached transport.
+
+        Deleting or re-configuring a machine must not leave the old
+        connection (and its old token/password) cached: a re-registered
+        machine would otherwise keep authenticating with stale credentials
+        until the process restarts.
+        """
+        endpoint = self._engines.pop(engine_id, None)
+        if endpoint is None:
+            return
+        remaining = list(self._engines.values())
+
+        if endpoint.kind == "ssh":
+            key = (
+                endpoint.host,
+                endpoint.ssh_port,
+                endpoint.ssh_username or "root",
+            )
+            still_used = any(
+                item.kind == "ssh"
+                and (item.host, item.ssh_port, item.ssh_username or "root") == key
+                for item in remaining
+            )
+            if not still_used:
+                transport = self._ssh_transports.pop(key, None)
+                if transport is not None:
+                    try:
+                        await transport.close()
+                    except Exception as exc:  # noqa: BLE001 - cache cleanup is best effort
+                        logger.warning(f"closing SSH transport failed: {exc}")
+            return
+
+        key = (endpoint.host, endpoint.port)
+        still_used = any(
+            item.kind != "ssh" and (item.host, item.port) == key
+            for item in remaining
+        )
+        if not still_used:
+            transport = self._remote.pop(key, None)
+            if transport is not None:
+                try:
+                    await transport.close()
+                except Exception as exc:  # noqa: BLE001 - cache cleanup is best effort
+                    logger.warning(f"closing remote transport failed: {exc}")
+
     def for_engine(
         self,
         engine_id: int | None = None,

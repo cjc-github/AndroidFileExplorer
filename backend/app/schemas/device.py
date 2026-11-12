@@ -31,6 +31,34 @@ class EngineCreate(BaseModel):
         return cleaned
 
 
+class EngineUpdate(BaseModel):
+    """Payload to edit a registered machine.
+
+    Secret fields follow the "blank means keep" rule: the edit form never
+    receives the stored token/password, so an empty value must not wipe it.
+    ``adb_path`` may be cleared explicitly with an empty string.
+    """
+
+    name: str | None = Field(default=None, max_length=100)
+    host: str | None = Field(default=None, min_length=1, max_length=200)
+    port: int | None = Field(default=None, ge=1, le=65535)
+    token: str | None = Field(default=None, max_length=200)
+    ssh_username: str | None = Field(default=None, max_length=100)
+    ssh_password: str | None = Field(default=None, max_length=200)
+    ssh_port: int | None = Field(default=None, ge=1, le=65535)
+    adb_path: str | None = Field(default=None, max_length=300)
+
+    @field_validator("host")
+    @classmethod
+    def strip_optional_host(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("host 不能为空")
+        return cleaned
+
+
 class EngineInfo(BaseModel):
     """View model of a machine that hosts ADB."""
 
@@ -168,6 +196,28 @@ class RenameRequest(BaseModel):
 
     source: str = Field(min_length=1, description="原路径")
     target: str = Field(min_length=1, description="新路径")
+
+
+class ArchiveSelectionRequest(BaseModel):
+    """Selected device paths to zip into one archive."""
+
+    paths: list[str] = Field(min_length=1, max_length=200, description="选中的路径列表")
+
+
+class CopyRequest(BaseModel):
+    """Copy a file / directory on the device."""
+
+    source: str = Field(min_length=1, description="源路径")
+    target: str = Field(min_length=1, description="目标路径")
+
+
+class PermissionsRequest(BaseModel):
+    """Change the permissions / owner of one device path."""
+
+    path: str = Field(min_length=1, description="要修改的路径")
+    mode: str | None = Field(default=None, max_length=8, description="八进制权限，例如 644")
+    owner: str | None = Field(default=None, max_length=100, description="所有者")
+    group: str | None = Field(default=None, max_length=100, description="用户组")
 
 
 class RemoveRequest(BaseModel):

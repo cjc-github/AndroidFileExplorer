@@ -153,3 +153,72 @@ def test_registering_the_same_machine_twice_is_rejected(client):
     response = client.post("/api/v1/engines", json=payload)
     assert response.status_code == 400
     assert "已登记" in response.json()["detail"]
+
+
+def test_update_machine_renames_and_rotates_token(client):
+    engine = client.post(
+        "/api/v1/engines",
+        json={"name": "虚拟机", "host": "192.168.114.130", "port": 12345, "kind": "remote"},
+    ).json()["data"]
+
+    response = client.patch(
+        f"/api/v1/engines/{engine['id']}",
+        json={"name": "新名字", "token": "rotated-secret"},
+    )
+    assert response.status_code == 200
+    updated = response.json()["data"]
+    assert updated["name"] == "新名字"
+    assert updated["host"] == "192.168.114.130"
+
+    listing = client.get("/api/v1/engines").json()["data"]
+    assert any(item["name"] == "新名字" for item in listing)
+
+
+def test_update_machine_rejects_duplicate_address(client):
+    first = client.post(
+        "/api/v1/engines",
+        json={"name": "a", "host": "192.168.1.10", "port": 12345, "kind": "remote"},
+    ).json()["data"]
+    client.post(
+        "/api/v1/engines",
+        json={"name": "b", "host": "192.168.1.11", "port": 12345, "kind": "remote"},
+    )
+
+    response = client.patch(
+        f"/api/v1/engines/{first['id']}",
+        json={"host": "192.168.1.11"},
+    )
+    assert response.status_code == 400
+    assert "已登记" in response.json()["detail"]
+
+
+def test_delete_machine_drops_the_resolver_entry(client):
+    engine = client.post(
+        "/api/v1/engines",
+        json={"name": "虚拟机", "host": "192.168.114.130", "port": 12345, "kind": "remote"},
+    ).json()["data"]
+    resolver = get_transport_resolver()
+    assert engine["id"] in resolver._engines
+
+    assert client.delete(f"/api/v1/engines/{engine['id']}").status_code == 200
+    assert engine["id"] not in resolver._engines
+
+
+def test_engine_info_reports_stored_ssh_password_without_echoing_it():
+    from app.models.device import EngineRecord
+    from app.schemas.device import EngineInfo
+
+    record = EngineRecord(
+        id=1,
+        name="ssh-box",
+        host="192.168.1.20",
+        port=2222,
+        kind="ssh",
+        ssh_username="root",
+        ssh_password="top-secret",
+        ssh_port=2222,
+        status="connected",
+    )
+    info = EngineInfo.model_validate(record)
+    assert info.has_ssh_password is True
+    assert "top-secret" not in info.model_dump_json()
