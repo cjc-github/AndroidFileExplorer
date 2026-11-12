@@ -57,6 +57,32 @@ GET /api/v1/devices/{uid}/files/download?path=/sdcard/a.bin&token=<token>
 { "code": 200, "message": "操作成功", "data": { "status": "ok", "service": "android-file-explorer" } }
 ```
 
+### `GET /api/v1/system/check`
+
+环境自检。返回后端运行所需/可选依赖的状态，供设置页展示：
+
+```json
+{
+  "code": 200,
+  "data": {
+    "ok": true,
+    "checks": [
+      {
+        "key": "adb",
+        "label": "本机 adb",
+        "ok": true,
+        "required": false,
+        "message": "Android Debug Bridge version 1.0.41（/usr/bin/adb），adb server 正常，当前 1 台设备",
+        "fix": null
+      }
+    ]
+  }
+}
+```
+
+`required=false` 的项（`adb`、`asyncssh`）只影响对应能力，缺失不会阻止后端启动；
+`ok=false` 时 `fix` 给出可直接执行的修复提示。
+
 ---
 
 ## 2. 机器（挂载 ADB server 的宿主机）

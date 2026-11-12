@@ -1,11 +1,11 @@
 # 功能点实现清单
 
 > 以真机验证与自动化测试为勾选依据。每个 ✓ 都有对应的验证记录：
-> 真机（192.168.114.130 / emulator-5554）、`pytest`（190 passed）、前端 `vitest`（18 passed）
+> 真机（192.168.114.130 / emulator-5554）、`pytest`（192 passed）、前端 `vitest`（18 passed）
 > 或门禁（`scripts/verify.sh` 六步全绿）。
 > 未勾选项为已知的待实现功能，按优先级排列。
 
-最后更新：2026-11-12 · 后端测试 190 passed · 前端 vitest 18 passed · 门禁 6/6 全绿
+最后更新：2026-11-12 · 后端测试 192 passed · 前端 vitest 18 passed · 门禁 6/6 全绿
 
 ---
 
@@ -137,11 +137,14 @@
 
 ## 六、质量保障
 
-- [x] 后端单元 + 集成测试（190 passed，26 个测试文件）
+- [x] 后端单元 + 集成测试（192 passed，28 个测试文件）
 - [x] 前端单元测试（vitest + happy-dom，18 用例：格式化工具 / 请求层错误提取 / `?token=` 引导 / ErrorBoundary）
 - [x] 真实 uvicorn + 真实 HTTP 的端到端检查（`live_server_check`）
 - [x] 真实浏览器逐页渲染检查（`render-check`，Chrome headless DOM 断言）
 - [x] 文件浏览交互检查（CDP 真点击：跳转 / 面包屑 / 403 / 新建 / 重命名 / 删除）
+- [x] 本地环境预检脚本（`scripts/check-env.sh`，Python / 依赖 / node / adb）
+- [x] `start.sh` / `dev.sh` 启动前自动做环境预检
+- [x] `install-agent.sh` / `deploy_agent.py` 部署前检查远端 `python3`(≥3.10) 与 `adb`
 - [x] 六步门禁一键跑完（`scripts/verify.sh`）
 - [x] CI 流水线（`.github/workflows/ci.yml`：后端 pytest + e2e、前端 vitest + tsc/build）
 - [x] 请求 ID 日志追踪（后端 `X-Request-ID` 中间件，401 也带 ID）
@@ -170,6 +173,10 @@
 - [x] 设置项：设备列表刷新间隔（1–60 秒，前端轮询 + 页面文案联动）
 - [x] 设置项：后台自动同步间隔（0 = 后台不周期探测，页面打开期间仍做恢复性同步；>0 周期执行设备发现）
 - [x] 设置项：自动尝试 root（同步后对未 root 在线设备执行 `adb root`，生产设备拒绝仅记日志）
+- [x] 环境自检：Python / 后端依赖 / asyncssh / adb / 数据目录写权限
+- [x] 后端启动日志记录环境警告，不因可选依赖缺失阻止启动
+- [x] `GET /api/v1/system/check` + 设置页「环境自检」卡片（含缺失项修复命令）
+- [x] 设备页在本机 adb 不可用且无设备时给出告警和自检入口
 - [x] 设置存库（KV 表，启动自动迁移建表），GET/PUT `/api/v1/settings`，保存即生效无需重启
 - [x] 后台循环常驻 lifespan（异常自愈、停止时优雅取消）
 - [x] 真机双向验证：开启后 10s 内自动提权（`auto root succeeded`），关闭后不再提权

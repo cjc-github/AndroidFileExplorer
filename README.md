@@ -223,6 +223,9 @@ uid = sha1("kind|endpoint|serial")[:16]      # 没报告时按机器 + serial
 python3 agent/agent.py --host 0.0.0.0 --port 18077
 ```
 
+`install-agent.sh` / `deploy_agent.py` 会在传输前检查远端 `python3`（≥3.10）和
+`adb`，缺失时直接给出安装提示；启动后再用 `adb devices` 自检。
+
 完成后在 **远程机器连接配置**页点「新增机器」，填该机器 IP 与 agent 端口。
 
 ## 接入真实远程机器
@@ -274,7 +277,7 @@ AndroidFileExplorer/
 │   │   ├── api/routes/     devices / files / engines
 │   │   └── main.py
 │   ├── scripts/            e2e_demo / live_server_check / render_check_with_device / real_device_check
-│   └── tests/              190 个 pytest 用例
+│   └── tests/              192 个 pytest 用例
 ├── frontend/               Vite + React 19 + antd 5 + TanStack Query + TanStack Router
 │   └── src/
 │       ├── api/            类型 + 请求封装（含 token 引导）
@@ -287,6 +290,7 @@ AndroidFileExplorer/
 │       └── router.tsx      四条路由
 ├── .github/workflows/ci.yml  CI（后端测试 + 前端 vitest/tsc/build）
 └── scripts/
+    ├── check-env.sh        本地环境检查（Python / 依赖 / node / adb）
     ├── start.sh            后台启动 / 停止
     ├── dev.sh              前台启动
     ├── verify.sh           完整验证门禁（6 步）
@@ -296,12 +300,32 @@ AndroidFileExplorer/
     └── install-agent.sh           一键部署设备侧 agent（自包含）
 ```
 
+## 环境前置
+
+| 组件 | 用途 | 缺失时的表现 |
+|---|---|---|
+| Python 3.10+ / `.venv` | 后端运行时 | 后端无法启动 |
+| Node.js 20+ / npm | 前端开发服务器 | 前端无法启动 |
+| `adb`（Android platform-tools） | 本机设备发现 | 仅影响本机设备；远程机器仍可用 |
+| `asyncssh`（Python 包） | SSH 直连接入 | SSH 直连不可用；agent 接入不受影响 |
+
+启动和部署前可以手动检查：
+
+```bash
+./scripts/check-env.sh                 # 后端 + 前端
+./scripts/check-env.sh --backend-only  # 仅后端
+```
+
+后端还会在启动时记录环境警告，并提供 `GET /api/v1/system/check` 给设置页的
+「环境自检」卡片使用；`adb` / `asyncssh` 属于可选能力，缺失不会阻止其他功能启动。
+
 ## 快速开始
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r backend/requirements.txt
 cd frontend && npm install && cd ..
+./scripts/check-env.sh
 ./scripts/start.sh
 ```
 
@@ -313,11 +337,11 @@ cd frontend && npm install && cd ..
 
 | 步骤 | 内容 | 通过标准 |
 |---|---|---|
-| 1 | 后端单元 + 集成测试（含 agent、认证、设备标识、文件操作、root 切换、连接池、缓冲读） | 190 passed |
+| 1 | 后端单元 + 集成测试（含 agent、认证、设备标识、文件操作、root 切换、连接池、缓冲读） | 192 passed |
 | 2 | 后端端到端（TestClient） | 全部通过 |
 | 3 | 后端端到端（真实 uvicorn + 真实 HTTP） | 全部通过 |
 | 4 | 前端类型检查 + 生产构建 | `tsc -b` + `vite build` 通过 |
-| 5 | **真实浏览器逐页渲染检查（4 页）** | 33 项断言全 PASS |
+| 5 | **真实浏览器逐页渲染检查（5 页）** | 50 项断言全 PASS |
 | 6 | **文件浏览交互检查**（路径直达 / 面包屑 / 越权提示） | 11 项断言全 PASS |
 
 前端另有单元测试：`cd frontend && npm test`（vitest + happy-dom，18 用例：
@@ -326,7 +350,7 @@ cd frontend && npm install && cd ..
 CI：`.github/workflows/ci.yml` 在 push / PR 上自动跑「后端 pytest + e2e smoke」
 与「前端 vitest + tsc/build」两个 job。
 
-带设备场景另跑一轮（`backend/scripts/render_check_with_device.py`）：4 页 42 项断言全 PASS。
+带设备场景另跑一轮（`backend/scripts/render_check_with_device.py`）：5 页 54 项断言全 PASS。
 
 第 6 步用 Chrome DevTools Protocol 直连（**零 npm 依赖**，不装 puppeteer），
 验证的是真实交互：填路径 → 跳转 → 点面包屑 → 看到权限告警。

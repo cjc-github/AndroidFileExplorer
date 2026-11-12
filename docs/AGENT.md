@@ -25,6 +25,11 @@ agent 就是那台机器上的"代执行者"。
 
 网络要求：**平台后端 → 远程机器 agent 端口** TCP 可达（默认 `18077`）。
 
+部署前无需手动检查：`install-agent.sh` / `deploy_agent.py` 会先通过旧通道执行
+`command -v python3`、Python 版本检查、`command -v adb`、`adb version` 和
+`adb devices -l`；缺失时直接打印安装提示并停止传输。平台侧也可以运行
+`./scripts/check-env.sh --backend-only` 检查本地依赖。
+
 ## 3. 快速接入（推荐）
 
 在**本项目目录**（平台所在机器）执行一条命令：
