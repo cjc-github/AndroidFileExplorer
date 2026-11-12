@@ -117,6 +117,7 @@ def main() -> int:
             ("devices", f"http://127.0.0.1:{FRONTEND_PORT}/devices", ["--expect-device"]),
             ("picker", f"http://127.0.0.1:{FRONTEND_PORT}/files", ["--expect-device"]),
             ("files", f"http://127.0.0.1:{FRONTEND_PORT}/devices/{DEVICE_UID}/files", []),
+            ("settings", f"http://127.0.0.1:{FRONTEND_PORT}/settings", []),
         ):
             print(f"\n########## {slug} ##########")
             result = subprocess.run(

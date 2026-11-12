@@ -131,6 +131,14 @@ render_page() {
         check "${out}" "删除按钮"         "anticon-delete"
       fi
       ;;
+    settings)
+      check "${out}" "平台设置标题"       "平台设置"
+      check "${out}" "环境自检卡片"       "环境自检"
+      check "${out}" "重新检查按钮"       "重新检查"
+      check "${out}" "Python 检查项"      "Python 运行时"
+      check "${out}" "adb 检查项"         "本机 adb"
+      check "${out}" "数据目录检查项"     "数据目录写权限"
+      ;;
   esac
 
   if [[ "${EXPECT_DEVICE}" == "yes" ]]; then
@@ -164,6 +172,7 @@ if [[ -n "${ONLY_PAGE}" ]]; then
       FILE_UID="$(device_uid || echo 0000000000000000)"
       render_page files "${TARGET_URL:-${BASE_URL}/devices/${FILE_UID}/files}"
       ;;
+    settings) render_page settings "${TARGET_URL:-${BASE_URL}/settings}" ;;
     *) echo "unknown page: ${ONLY_PAGE}" >&2; exit 2 ;;
   esac
 elif [[ -n "${TARGET_URL}" ]]; then
@@ -175,6 +184,7 @@ else
   # A real uid makes the file rows (and their actions) render.
   FILE_UID="$(device_uid || echo 0000000000000000)"
   render_page files "${BASE_URL}/devices/${FILE_UID}/files"
+  render_page settings "${BASE_URL}/settings"
 fi
 
 echo
