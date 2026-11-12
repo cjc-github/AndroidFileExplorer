@@ -98,7 +98,7 @@ AndroidFileExplorer/
 | GET | `/api/v1/health` | 健康检查 |
 | GET | `/api/v1/engines` | 远程机器列表 |
 | POST | `/api/v1/engines` | 新增远程机器并探活 |
-| GET | `/api/v1/devices` | 设备列表（`?refresh=true` 触发同步） |
+| GET | `/api/v1/devices` | 设备列表（`?refresh=true` 触发同步；`?page=&page_size=&keyword=&sort_by=&sort_order=` 分页/过滤/排序） |
 | GET | `/api/v1/devices/{uid}` | 设备详情 + 指标 |
 | POST | `/api/v1/devices/{uid}/connect` | 重连该设备（生命周期操作） |
 | POST | `/api/v1/devices/{uid}/disconnect` | 断开该设备 |

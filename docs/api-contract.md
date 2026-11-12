@@ -181,10 +181,32 @@ GET /api/v1/devices/{uid}/files/download?path=/sdcard/a.bin&token=<token>
 
 对应界面：**设备资源管理** `/devices`。
 
-### `GET /api/v1/devices?refresh={true|false}`
+### `GET /api/v1/devices?refresh={true|false}&page={n}&page_size={n}&keyword={kw}&sort_by={field}&sort_order={asc|desc}`
 
 - `refresh=true`：先从本机与所有远程机器同步一次设备清单，再返回。
 - `refresh=false`（默认）：直接返回注册表中的已知设备。
+- `page`：页码（从 1 开始）。**传入时分页返回**，未传入时保持旧版全量数组。
+- `page_size`：每页条数，默认 20，最大 200。
+- `keyword`：按名称 / 型号 / 序列号 / UID / 品牌在**全量设备**中过滤，仅分页模式生效。
+- `sort_by`：`device` / `uid` / `status` / `last_seen`，服务端按全量数据排序。
+- `sort_order`：`asc` / `desc`，默认 `desc`。
+- 分页模式只对当前页设备采集 CPU / 内存 / 存储指标，避免设备多时轮询压力过大。
+
+分页响应：
+
+```json
+{
+  "code": 200,
+  "data": {
+    "items": [ { "uid": "95fad2083bf7161a", "serial": "emulator-5554", "...": "同下" } ],
+    "total": 137,
+    "page": 1,
+    "page_size": 20
+  }
+}
+```
+
+不分页的旧响应：
 
 ```json
 {
@@ -238,6 +260,11 @@ uid = sha1(f"{transport_kind}|{endpoint}|{serial}")[:16]
     "cpu_percent": 23.5,
     "cpu_user_percent": 12.0,
     "cpu_system_percent": 11.5,
+    "cpu_current_freq_khz": 1800000,
+    "storage": [
+      { "path": "/data", "total_bytes": 107374182400, "used_bytes": 42949672960, "available_bytes": 64424509440 },
+      { "path": "/sdcard", "total_bytes": 53687091200, "used_bytes": 10737418240, "available_bytes": 42949672960 }
+    ],
     "memory_total_bytes": 8589934592,
     "memory_available_bytes": 4294967296,
     "memory_used_bytes": 4294967296,
@@ -249,6 +276,9 @@ uid = sha1(f"{transport_kind}|{endpoint}|{serial}")[:16]
 ```
 
 > `cpu_percent` 为 `null` 表示**尚无基线**（首次采样），不是 0%。
+> `cpu_current_freq_khz` 为当前各核 `scaling_cur_freq` 的平均值（kHz）；设备无
+> cpufreq（如模拟器）时为 `null`。`storage` 为 `/data`、`/sdcard` 的用量，读取失败
+> 的挂载点不会出现在数组中。
 
 ### `POST /api/v1/devices/{uid}/connect`
 

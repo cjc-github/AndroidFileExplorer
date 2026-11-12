@@ -168,11 +168,19 @@ busybox 布局是第 9 个（带年份）——按是否匹配 ISO 日期动态�
 **指标单次往返（`METRICS_COMMAND`）**：
 
 ```sh
-cat /proc/stat; echo '---AFE---'; cat /proc/meminfo; echo '---AFEPROPS---'; cat /proc/loadavg
+cat /proc/stat; echo '---AFE---'; cat /proc/meminfo;
+echo '---AFEPROPS---'; cat /proc/loadavg;
+echo '---AFEFREQ---'; cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_cur_freq 2>/dev/null;
+echo '---AFESTORAGEDATA---'; df -k /data 2>/dev/null;
+echo '---AFESTORAGESDCARD---'; df -k /sdcard 2>/dev/null;
+cat /proc/loadavg >/dev/null
 ```
 
-用两个标记把一次 shell 输出切成三段（stat / meminfo / loadavg），避免三次
-adb 往返。`getprop` 被刻意排除：真机上 `getprop` **只有作为 shell 唯一命令时
+用五个标记把一次 shell 输出切成六段（stat / meminfo / loadavg / 实时频率 /
+`/data` / `/sdcard`），避免多次 adb 往返；末尾再读一次 loadavg 作为状态哨兵，
+可选的 cpufreq / df 探测失败不会让整次采样失败。
+
+`getprop` 被刻意排除：真机上 `getprop` **只有作为 shell 唯一命令时
 才能解析**，所以品牌（`ro.product.brand`）单独一次调用并缓存。
 
 `parse_metrics` 解析细节：
@@ -181,6 +189,10 @@ adb 往返。`getprop` 被刻意排除：真机上 `getprop` **只有作为 shel
   原始累计值存进 `raw_*_jiffies` 供差分。
 - 内存：`MemTotal` / `MemAvailable`（kB × 1024），used = total - available。
 - loadavg：`"0.00 0.02 0.13 1/1284 6607"` 取前三个浮点。
+- 实时频率：`scaling_cur_freq` 每个核一行（kHz），过滤 <100 MHz 的伪值后取平均；
+  设备没有 cpufreq 时保持 `None`。
+- 存储：`df -k` 的 `1K-blocks / Used / Available` 三列（×1024），`/data` 与
+  `/sdcard` 分别解析，解析失败时对应项省略。
 
 **root 切换（`set_root`）**——两处坑的对策：
 
@@ -322,7 +334,7 @@ adb 往返。`getprop` 被刻意排除：真机上 `getprop` **只有作为 shel
 
 | 路由 | 逻辑要点 |
 |---|---|
-| `GET /` | `refresh=true` 先并发同步所有机器；在线设备的指标采样**并发**（`asyncio.gather`，每任务独立 DB session——共享 session 的写入互撞）；指标走 2.5s 缓存、root 探测走 15s TTL 缓存，结果回写 DB；采样失败会把状态降级（permission/unauthorized 立即，offline/通用错误连续 2 次），并支持全量同步恢复 |
+| `GET /` | `refresh=true` 先并发同步所有机器；传 `page` 时按 `page_size` 分页并只对当前页采样，`keyword` 在 SQL 层过滤全量设备，`sort_by`/`sort_order` 在 SQL 层排序（device/uid/status/last_seen）；未传 `page` 保持旧版全量数组。在线设备的指标采样**并发**（`asyncio.gather`，每任务独立 DB session——共享 session 的写入互撞）；指标走 2.5s 缓存、root 探测走 15s TTL 缓存，结果回写 DB；采样失败会把状态降级（permission/unauthorized 立即，offline/通用错误连续 2 次），并支持全量同步恢复 |
 | `GET /{uid}` | 详情 + **强制**重新采样（`force=True` 绕过缓存）；失败同样降级状态 |
 | `GET /{uid}/metrics` | 前端轮询点；异常时改写生命周期（permission_denied / unauthorized / offline） |
 | `PATCH /{uid}` | 改设备别名 |
@@ -471,7 +483,7 @@ app.add_middleware(CORSMiddleware, ...)       # 最后加 = 最外层
 | agent FILE_PULL 分块流式（1MB，两遍读） | `agent/agent.py::_handle_pull` | 拉取内存 O(1)，不再整文件进 RAM |
 | 远程 TCP 长连接常驻 | `remote_engine.py::_client` | 免每 3s 重新握手 |
 | 指标缓存 2.5s + CPU 差分基线 | `metrics.py` | 轮询周期内一设备一次 shell |
-| 一次 shell 读三段 /proc（marker 分段） | `base.py::METRICS_COMMAND` | 3 次往返 → 1 次 |
+| 一次 shell 读多段（/proc + cpufreq + df，marker 分段） | `base.py::METRICS_COMMAND` | 多次往返 → 1 次 |
 | 品牌与静态属性只读一次（进程内缓存） | `base.py::_brand_cache/_props_cache` | 轮询不再打 getprop |
 | 故障熔断（短期跳过不可达机器） | `remote_engine.py::_failed_until` | 不每次等满超时 |
 | 搜索并发 8 + 跳过伪文件系统 + 限额 | `file_service.py` | 全树搜索 6.2s → 0.6s |
@@ -541,7 +553,7 @@ app.add_middleware(CORSMiddleware, ...)       # 最后加 = 最外层
    transport.metrics(serial)
    ├─ local:  adb -s <serial> shell "cat /proc/stat; echo ---AFE---; ..."
    └─ remote: MDD 长连接 "adb -s <serial> shell ..." → agent 信封 → 解包
-4. parse_metrics 拆三段 → CPU/Mem/Load；CPU% 对上次基线差分（首测 None）
+4. parse_metrics 拆多段 → CPU/Mem/Load/实时频率/存储；CPU% 对上次基线差分（首测 None）
 5. brand/props/rooted 命中进程内缓存 → 不打设备
 6. 组装 DeviceInfo（含 metrics）回写 DB → BaseResponse 信封 → axios unwrap → 表格渲染
 ```
