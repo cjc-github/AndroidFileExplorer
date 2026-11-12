@@ -717,6 +717,60 @@ class Transport(ABC):
             timeout=30,
         )
 
+    async def copy(self, serial: str, source: str, target: str) -> None:
+        """Copy a file or directory (recursively)."""
+        source_path = assert_safe_device_path(source)
+        target_path = assert_safe_device_path(target)
+        for value in (source_path, target_path):
+            if value == "/":
+                raise ValueError("不能操作根目录")
+        if source_path == target_path:
+            raise ValueError("源路径与目标路径相同")
+        await self.shell(
+            serial,
+            f"cp -r {shlex.quote(source_path)} {shlex.quote(target_path)}",
+            timeout=120,
+        )
+
+    async def change_permissions(
+        self,
+        serial: str,
+        path: str,
+        mode: str | None = None,
+        owner: str | None = None,
+        group: str | None = None,
+    ) -> None:
+        """Apply ``chmod`` / ``chown`` to one path.
+
+        The mode and the owner/group names are validated before they reach
+        the shell; the path itself is covered by the shared whitelist.
+        """
+        normalized = assert_safe_device_path(path)
+        if normalized == "/":
+            raise ValueError("不能修改根目录权限")
+        mode = (mode or "").strip() or None
+        owner = (owner or "").strip() or None
+        group = (group or "").strip() or None
+        if mode is not None and not re.fullmatch(r"[0-7]{3,4}", mode):
+            raise ValueError("权限模式必须是 3~4 位八进制数字，例如 644")
+        for value in (owner, group):
+            if value is not None and not re.fullmatch(r"[A-Za-z0-9_.-]+", value):
+                raise ValueError("所有者/用户组只能包含字母、数字、下划线、点和短横线")
+        commands: list[str] = []
+        if mode is not None:
+            commands.append(f"chmod {mode} {shlex.quote(normalized)}")
+        if owner is not None or group is not None:
+            if owner is not None and group is not None:
+                spec = f"{owner}:{group}"
+            elif owner is not None:
+                spec = owner
+            else:
+                spec = f":{group}"
+            commands.append(f"chown {shlex.quote(spec)} {shlex.quote(normalized)}")
+        if not commands:
+            raise ValueError("至少需要提供权限模式或所有者")
+        await self.shell(serial, " && ".join(commands), timeout=20)
+
     async def remove(self, serial: str, path: str, recursive: bool = False) -> None:
         """Delete a file (or a directory with ``recursive``)."""
         normalized = assert_safe_device_path(path)

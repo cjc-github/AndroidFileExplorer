@@ -158,3 +158,43 @@ def test_an_empty_alias_clears_the_name(client):
     response = client.patch(f"/api/v1/devices/{uid}", json={"alias": "  "})
     assert response.status_code == 200
     assert response.json()["data"]["alias"] is None
+
+
+def test_copy_uses_recursive_cp(client):
+    uid = _seed(client)
+    response = client.post(
+        f"/api/v1/devices/{uid}/files/copy",
+        json={"source": "/sdcard/a", "target": "/sdcard/b"},
+    )
+    assert response.status_code == 200
+    assert any("cp -r" in command for command in client.transport.commands)
+
+
+def test_copy_rejects_the_root_directory(client):
+    uid = _seed(client)
+    response = client.post(
+        f"/api/v1/devices/{uid}/files/copy",
+        json={"source": "/", "target": "/sdcard/b"},
+    )
+    assert response.status_code == 400
+
+
+def test_permissions_use_chmod_and_chown(client):
+    uid = _seed(client)
+    response = client.post(
+        f"/api/v1/devices/{uid}/files/permissions",
+        json={"path": "/sdcard/a", "mode": "644", "owner": "shell", "group": "shell"},
+    )
+    assert response.status_code == 200
+    combined = " ".join(client.transport.commands)
+    assert "chmod 644" in combined
+    assert "chown shell:shell" in combined
+
+
+def test_permissions_reject_a_non_octal_mode(client):
+    uid = _seed(client)
+    response = client.post(
+        f"/api/v1/devices/{uid}/files/permissions",
+        json={"path": "/sdcard/a", "mode": "rwx"},
+    )
+    assert response.status_code == 400

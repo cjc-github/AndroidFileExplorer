@@ -2,21 +2,30 @@
 
 from __future__ import annotations
 
+import base64
+import mimetypes
+import tempfile
+import uuid
 from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi import APIRouter, Depends, File as FormFile, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.background import BackgroundTask
 
 from app.config import settings
 from app.core.response import BaseResponse
 from app.db.session import get_session
 from app.logger import logger
 from app.schemas.device import (
+    ArchiveSelectionRequest,
+    CopyRequest,
     FileInfo,
     FileListResponse,
     MkdirRequest,
     PathPart,
+    PermissionsRequest,
     PullRequest,
     PushRequest,
     RemoveRequest,
@@ -38,6 +47,13 @@ from app.transports.base import (
 )
 
 router = APIRouter(prefix="/api/v1/devices/{uid}/files", tags=["files"])
+
+#: Text / image previews are pulled completely, so cap them tightly.
+PREVIEW_MAX_BYTES = 2 * 1024 * 1024
+#: Directory archives are assembled on the server; keep the work bounded.
+ARCHIVE_MAX_FILES = 200
+ARCHIVE_MAX_BYTES = 200 * 1024 * 1024
+ARCHIVE_MAX_DEPTH = 6
 
 
 def _listing_to_response(listing: DirectoryListing) -> FileListResponse:
@@ -166,6 +182,7 @@ async def search_files(
     uid: str,
     keyword: str = Query(..., min_length=1, description="搜索关键字"),
     path: str = Query("/", description="搜索起始路径"),
+    limit: int = Query(200, ge=1, le=1000, description="最多返回的结果数"),
     db: AsyncSession = Depends(get_session),
     resolver: TransportResolver = Depends(get_transport_resolver),
 ) -> BaseResponse[FileListResponse]:
@@ -175,10 +192,295 @@ async def search_files(
         db,
         resolver,
         lambda transport, _record: FileService(transport).search(
-            _record.serial, keyword, path
+            _record.serial, keyword, path, max_items=limit
         ),
     )
     return BaseResponse.success(_listing_to_response(listing))
+
+
+@router.get("/preview", response_model=BaseResponse[dict], summary="预览设备文件")
+async def preview_file(
+    uid: str,
+    path: str = Query(min_length=1, description="设备上的文件路径"),
+    db: AsyncSession = Depends(get_session),
+    resolver: TransportResolver = Depends(get_transport_resolver),
+) -> BaseResponse[dict]:
+    """Return a small text / image preview of one device file.
+
+    A preview must not pull a multi-gigabyte file just to show its first
+    lines, so the entry's size is checked first and the endpoint refuses
+    anything above ``PREVIEW_MAX_BYTES``.
+    """
+    record, transport = await _resolve_device(uid, db, resolver)
+    normalized = normalize_device_path(path)
+    if normalized == "/":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="不能预览根目录")
+
+    entry = await FileService(transport).stat(record.serial, normalized)
+    if entry is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"文件不存在或不可读：{normalized}"
+        )
+    if entry.is_dir:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="目录不能直接预览"
+        )
+    if entry.is_link:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="符号链接暂不支持预览，请直接下载",
+        )
+    if entry.size is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="无法获取文件大小，暂不支持预览"
+        )
+    if entry.size > PREVIEW_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"文件过大（{entry.size} 字节），预览上限为 {PREVIEW_MAX_BYTES} 字节",
+        )
+
+    settings.download_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        prefix="afe-preview-", dir=settings.download_dir, delete=False
+    ) as handle:
+        temp_path = Path(handle.name)
+    try:
+        await transport.pull(record.serial, normalized, str(temp_path))
+        payload = temp_path.read_bytes()
+    except PermissionDeniedError as exc:
+        raise _permission_error(normalized, str(exc)) from exc
+    except TransportError as exc:
+        message = str(exc)
+        if "no such file" in message.lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"路径不存在：{message}"
+            ) from exc
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=message) from exc
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+    if len(payload) > PREVIEW_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"文件超过预览上限 {PREVIEW_MAX_BYTES} 字节",
+        )
+
+    if b"\x00" not in payload:
+        try:
+            text = payload.decode("utf-8")
+        except UnicodeDecodeError:
+            pass
+        else:
+            return BaseResponse.success(
+                {
+                    "kind": "text",
+                    "content": text,
+                    "size": len(payload),
+                }
+            )
+
+    content_type, _ = mimetypes.guess_type(normalized)
+    if content_type and content_type.startswith("image/"):
+        return BaseResponse.success(
+            {
+                "kind": "image",
+                "content_type": content_type,
+                "content": base64.b64encode(payload).decode(),
+                "size": len(payload),
+            }
+        )
+
+    return BaseResponse.success({"kind": "binary", "size": len(payload)})
+
+
+def _append_archive_file(
+    entry,
+    relative: str,
+    files: list[tuple[str, str]],
+    totals: dict[str, int],
+) -> None:
+    # Overlapping selections (a directory plus a file inside it) must not
+    # produce duplicate zip entries.
+    if any(existing == relative for _, existing in files):
+        return
+    if len(files) >= ARCHIVE_MAX_FILES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"文件数超过上限 {ARCHIVE_MAX_FILES}，请分批下载",
+        )
+    totals["bytes"] += entry.size or 0
+    if totals["bytes"] > ARCHIVE_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"总大小超过上限 {ARCHIVE_MAX_BYTES} 字节，请分批下载",
+        )
+    files.append((entry.path, relative))
+
+
+async def _collect_archive_entries(
+    transport,
+    serial: str,
+    current: str,
+    relative: str,
+    depth: int,
+    files: list[tuple[str, str]],
+    notes: list[str],
+    totals: dict[str, int],
+) -> None:
+    try:
+        entries = await transport.list_dir(serial, current)
+    except PermissionDeniedError as exc:
+        notes.append(f"{current}: 权限不足（{exc}）")
+        return
+    except TransportError as exc:
+        message = str(exc)
+        lowered = message.lower()
+        if "not a directory" in lowered:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"该路径不是目录：{message}",
+            ) from exc
+        if "no such file" in lowered:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"路径不存在：{message}",
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=message
+        ) from exc
+
+    for entry in entries:
+        child_relative = f"{relative}/{entry.name}".lstrip("/")
+        if entry.is_dir and not entry.is_link:
+            if depth + 1 > ARCHIVE_MAX_DEPTH:
+                notes.append(f"{entry.path}: 目录层级超过 {ARCHIVE_MAX_DEPTH}")
+                continue
+            await _collect_archive_entries(
+                transport, serial, entry.path, child_relative, depth + 1,
+                files, notes, totals,
+            )
+            continue
+        if entry.is_dir or entry.is_link:
+            notes.append(f"{entry.path}: 跳过符号链接")
+            continue
+        _append_archive_file(entry, child_relative, files, totals)
+
+
+async def _write_archive(
+    record,
+    transport,
+    files: list[tuple[str, str]],
+    notes: list[str],
+    filename: str,
+) -> FileResponse:
+    settings.download_dir.mkdir(parents=True, exist_ok=True)
+    archive_path = (
+        settings.download_dir / f"afe-archive-{uuid.uuid4().hex[:12]}.zip"
+    )
+    failures: list[str] = []
+
+    try:
+        with ZipFile(archive_path, "w", ZIP_DEFLATED) as archive:
+            for device_path, relative in files:
+                with tempfile.NamedTemporaryFile(
+                    prefix="afe-archive-item-",
+                    dir=settings.download_dir,
+                    delete=False,
+                ) as handle:
+                    local_path = Path(handle.name)
+                try:
+                    await transport.pull(record.serial, device_path, str(local_path))
+                    archive.write(local_path, arcname=relative)
+                except (PermissionDeniedError, TransportError) as exc:
+                    failures.append(f"{device_path}: {exc}")
+                finally:
+                    local_path.unlink(missing_ok=True)
+
+            all_notes = notes + failures
+            if all_notes:
+                archive.writestr(
+                    "_download_errors.txt",
+                    "\n".join(all_notes) + "\n",
+                )
+    except BaseException:
+        archive_path.unlink(missing_ok=True)
+        raise
+
+    logger.info(
+        f"archive {filename} -> {archive_path} files={len(files)} failures={len(failures)}"
+    )
+    return FileResponse(
+        archive_path,
+        filename=filename,
+        media_type="application/zip",
+        background=BackgroundTask(archive_path.unlink, missing_ok=True),
+    )
+
+
+@router.get("/archive", summary="把设备目录打包为 zip 下载")
+async def download_archive(
+    uid: str,
+    path: str = Query("/", description="要打包的设备目录"),
+    db: AsyncSession = Depends(get_session),
+    resolver: TransportResolver = Depends(get_transport_resolver),
+) -> FileResponse:
+    """Zip a device directory on the server and hand it to the browser."""
+    record, transport = await _resolve_device(uid, db, resolver)
+    root = normalize_device_path(path)
+
+    files: list[tuple[str, str]] = []
+    notes: list[str] = []
+    totals = {"bytes": 0}
+    await _collect_archive_entries(
+        transport, record.serial, root, "", 0, files, notes, totals
+    )
+
+    base_name = root.rstrip("/").rsplit("/", 1)[-1] or "root"
+    return await _write_archive(record, transport, files, notes, f"{base_name}.zip")
+
+
+@router.post("/archive-selection", summary="把选中的多个文件 / 目录打包为 zip")
+async def download_selection_archive(
+    uid: str,
+    payload: ArchiveSelectionRequest,
+    db: AsyncSession = Depends(get_session),
+    resolver: TransportResolver = Depends(get_transport_resolver),
+) -> FileResponse:
+    """Zip an explicit selection of device paths (files and directories)."""
+    record, transport = await _resolve_device(uid, db, resolver)
+    files: list[tuple[str, str]] = []
+    notes: list[str] = []
+    totals = {"bytes": 0}
+    seen: set[str] = set()
+    service = FileService(transport)
+
+    for raw in payload.paths:
+        normalized = normalize_device_path(raw)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        if normalized == "/":
+            notes.append("跳过根目录")
+            continue
+
+        entry = await service.stat(record.serial, normalized)
+        if entry is None:
+            notes.append(f"{normalized}: 文件不存在或不可读")
+            continue
+        if entry.is_link:
+            notes.append(f"{normalized}: 跳过符号链接")
+            continue
+        relative = normalized.lstrip("/")
+        if entry.is_dir:
+            await _collect_archive_entries(
+                transport, record.serial, normalized, relative, 0,
+                files, notes, totals,
+            )
+        else:
+            _append_archive_file(entry, relative, files, totals)
+
+    return await _write_archive(record, transport, files, notes, "selection.zip")
 
 
 @router.get("/download", summary="下载设备文件到本机")
@@ -327,6 +629,60 @@ async def rename(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return BaseResponse.success(
         {"source": payload.source, "target": payload.target}, message="重命名成功"
+    )
+
+
+@router.post("/copy", response_model=BaseResponse[dict], summary="复制文件")
+async def copy(
+    uid: str,
+    payload: CopyRequest,
+    db: AsyncSession = Depends(get_session),
+    resolver: TransportResolver = Depends(get_transport_resolver),
+) -> BaseResponse[dict]:
+    """Copy a file / directory to another path on the device."""
+    record, transport = await _resolve_device(uid, db, resolver)
+    try:
+        await transport.copy(record.serial, payload.source, payload.target)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except PermissionDeniedError as exc:
+        logger.warning(f"copy permission denied on {uid}: {exc}")
+        raise _permission_error(payload.source, str(exc)) from exc
+    except TransportError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return BaseResponse.success(
+        {"source": payload.source, "target": payload.target}, message="复制成功"
+    )
+
+
+@router.post("/permissions", response_model=BaseResponse[dict], summary="修改文件权限")
+async def change_permissions(
+    uid: str,
+    payload: PermissionsRequest,
+    db: AsyncSession = Depends(get_session),
+    resolver: TransportResolver = Depends(get_transport_resolver),
+) -> BaseResponse[dict]:
+    """Apply chmod / chown to one device path."""
+    record, transport = await _resolve_device(uid, db, resolver)
+    try:
+        await transport.change_permissions(
+            record.serial, payload.path, payload.mode, payload.owner, payload.group
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except PermissionDeniedError as exc:
+        logger.warning(f"chmod permission denied on {uid}: {exc}")
+        raise _permission_error(payload.path, str(exc)) from exc
+    except TransportError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return BaseResponse.success(
+        {
+            "path": payload.path,
+            "mode": payload.mode,
+            "owner": payload.owner,
+            "group": payload.group,
+        },
+        message="权限已修改",
     )
 
 

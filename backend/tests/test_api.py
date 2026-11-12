@@ -283,3 +283,75 @@ def test_engine_list_contains_the_local_machine(client):
     assert response.status_code == 200
     engines = response.json()["data"]
     assert any(engine["kind"] == "local" for engine in engines)
+
+def test_file_preview_returns_text(client):
+    uid = _seed_device(client)
+    response = client.get(
+        f"/api/v1/devices/{uid}/files/preview", params={"path": "/sdcard/hello.txt"}
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["kind"] == "text"
+    assert "fake content" in data["content"]
+
+
+def test_file_preview_rejects_directories(client):
+    uid = _seed_device(client)
+    response = client.get(
+        f"/api/v1/devices/{uid}/files/preview", params={"path": "/sdcard/lib"}
+    )
+    assert response.status_code == 400
+    assert "目录" in response.json()["detail"]
+
+
+def test_directory_archive_contains_nested_files(client):
+    import io
+    import zipfile
+
+    uid = _seed_device(client)
+    response = client.get(
+        f"/api/v1/devices/{uid}/files/archive", params={"path": "/sdcard"}
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/zip")
+
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        names = set(archive.namelist())
+    assert "hello.txt" in names
+    assert "lib/libtest.so" in names
+
+
+def test_file_search_honours_the_result_limit(client):
+    uid = _seed_device(client)
+    response = client.get(
+        f"/api/v1/devices/{uid}/files/search",
+        params={"keyword": ".", "path": "/sdcard", "limit": 1},
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert len(data["items"]) == 1
+    assert data["truncated"] is True
+
+
+def test_selection_archive_zips_files_and_directories(client):
+    import io
+    import zipfile
+
+    uid = _seed_device(client)
+    response = client.post(
+        f"/api/v1/devices/{uid}/files/archive-selection",
+        json={
+            "paths": [
+                "/sdcard/hello.txt",
+                "/sdcard/lib",
+                # Overlaps the directory above: must not appear twice.
+                "/sdcard/lib/libtest.so",
+            ]
+        },
+    )
+    assert response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        names = archive.namelist()
+    assert "sdcard/hello.txt" in names
+    assert "sdcard/lib/libtest.so" in names
+    assert len(names) == len(set(names))
