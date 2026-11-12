@@ -31,7 +31,7 @@ async def _auto_sync_loop() -> None:
     logged and swallowed: the loop must survive a machine going away.
     """
     from app.db.session import async_session_maker
-    from app.api.routes.devices import run_auto_root, _sync_all_machines
+    from app.api.routes.devices import _sync_all_machines
     from app.services.settings_service import SettingsService
     from app.services.transport_resolver import TransportResolver
 
@@ -42,8 +42,10 @@ async def _auto_sync_loop() -> None:
                 interval = info.auto_sync_seconds
             if interval > 0:
                 async with async_session_maker() as session:
+                    # _sync_all_machines already runs the auto-root hook after
+                    # the discovery pass; calling it again would reboot adbd
+                    # twice per cycle.
                     await _sync_all_machines(session, get_transport_resolver())
-                    await run_auto_root(session, get_transport_resolver())
                 logger.info(f"auto sync cycle finished (interval {interval}s)")
                 await asyncio.sleep(interval)
             else:
