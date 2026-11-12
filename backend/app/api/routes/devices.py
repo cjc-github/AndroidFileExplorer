@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+from typing import Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +19,7 @@ from app.schemas.device import (
     DeviceAliasRequest,
     DeviceInfo,
     DeviceMetrics,
+    DevicePage,
 )
 from app.services.metrics import MetricsCollector
 from app.schemas.settings import SettingsInfo
@@ -184,24 +186,15 @@ async def _sync_all_machines(
     await run_auto_root(db, resolver)
 
 
-@router.get("", response_model=BaseResponse[list[DeviceInfo]], summary="查询设备列表")
-async def list_devices(
-    refresh: bool = Query(False, description="true 时先从各机器同步一次设备清单"),
-    db: AsyncSession = Depends(get_session),
-    resolver: TransportResolver = Depends(get_transport_resolver),
-    collector: MetricsCollector = Depends(get_metrics_collector),
-) -> BaseResponse[list[DeviceInfo]]:
-    """List every known device together with its runtime metrics.
+DeviceListData = Union[list[DeviceInfo], DevicePage]
 
-    ``refresh=true`` re-syncs the machines first (concurrently). The metrics
-    are sampled for every online device; a sample is cached for a short
-    window so the polling loop does not hammer the devices.
-    """
-    registry = DeviceRegistry(db)
-    if refresh:
-        await _sync_all_machines(db, resolver)
 
-    devices = await registry.list_devices()
+async def _sample_devices(
+    devices,
+    resolver: TransportResolver,
+    collector: MetricsCollector,
+) -> list[DeviceInfo]:
+    """Attach a runtime sample to every device in the given list."""
 
     async def _sample_one(device) -> DeviceInfo:
         # Every task gets its OWN database session: the sampling tasks run
@@ -219,7 +212,67 @@ async def list_devices(
 
     # The devices are independent: sampling them one after another made the
     # request wait for the slowest (or for a dead device to time out).
-    infos = list(await asyncio.gather(*(_sample_one(device) for device in devices)))
+    return list(await asyncio.gather(*(_sample_one(device) for device in devices)))
+
+
+@router.get("", response_model=BaseResponse[DeviceListData], summary="查询设备列表")
+async def list_devices(
+    refresh: bool = Query(False, description="true 时先从各机器同步一次设备清单"),
+    page: int | None = Query(
+        None,
+        ge=1,
+        description="页码。传入时返回分页结构 {items,total,page,page_size}",
+    ),
+    page_size: int = Query(20, ge=1, le=200, description="每页条数，仅在分页模式生效"),
+    keyword: str | None = Query(
+        None,
+        max_length=200,
+        description="按名称 / 型号 / 序列号 / UID / 品牌过滤，仅在分页模式生效",
+    ),
+    sort_by: str | None = Query(
+        None,
+        pattern="^(device|uid|status|last_seen)$",
+        description="排序字段：device / uid / status / last_seen，仅在分页模式生效",
+    ),
+    sort_order: str = Query(
+        "desc",
+        pattern="^(asc|desc)$",
+        description="排序方向，仅在分页模式生效",
+    ),
+    db: AsyncSession = Depends(get_session),
+    resolver: TransportResolver = Depends(get_transport_resolver),
+    collector: MetricsCollector = Depends(get_metrics_collector),
+) -> BaseResponse[DeviceListData]:
+    """List known devices together with their runtime metrics.
+
+    Without ``page`` the endpoint keeps the historical behaviour and returns
+    the full list. With ``page`` it returns one page only, and metrics are
+    sampled for that page instead of every device: this keeps the polling
+    loop cheap when hundreds of devices are registered.
+
+    ``refresh=true`` re-syncs the machines first (concurrently). A metric
+    sample is cached for a short window so the polling loop does not hammer
+    the devices.
+    """
+    registry = DeviceRegistry(db)
+    if refresh:
+        await _sync_all_machines(db, resolver)
+
+    if page is not None:
+        records, total = await registry.list_devices_page(
+            keyword=keyword,
+            page=page,
+            page_size=page_size,
+            sort_by=sort_by,
+            sort_order=sort_order,
+        )
+        infos = await _sample_devices(records, resolver, collector)
+        return BaseResponse.success(
+            DevicePage(items=infos, total=total, page=page, page_size=page_size)
+        )
+
+    devices = await registry.list_devices()
+    infos = await _sample_devices(devices, resolver, collector)
     return BaseResponse.success(infos)
 
 

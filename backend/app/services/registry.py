@@ -11,7 +11,7 @@ import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.logger import logger
@@ -181,6 +181,61 @@ class DeviceRegistry:
             select(DeviceRecord).order_by(DeviceRecord.updated_at.desc())
         )
         return list(result.scalars().all())
+
+    async def list_devices_page(
+        self,
+        *,
+        keyword: str | None,
+        page: int,
+        page_size: int,
+        sort_by: str | None = None,
+        sort_order: str = "desc",
+    ) -> tuple[list[DeviceRecord], int]:
+        """Return one page of devices plus the total row count.
+
+        The keyword filter and the ordering run in SQL so they cover the
+        whole registry, not only the rows already loaded into the browser.
+        """
+        conditions = []
+        needle = (keyword or "").strip().lower()
+        if needle:
+            pattern = f"%{needle}%"
+            conditions = [
+                func.lower(DeviceRecord.alias).like(pattern),
+                func.lower(DeviceRecord.model).like(pattern),
+                func.lower(DeviceRecord.serial).like(pattern),
+                func.lower(DeviceRecord.uid).like(pattern),
+                func.lower(DeviceRecord.brand).like(pattern),
+            ]
+
+        count_stmt = select(func.count()).select_from(DeviceRecord)
+        page_stmt = select(DeviceRecord)
+        if conditions:
+            count_stmt = count_stmt.where(or_(*conditions))
+            page_stmt = page_stmt.where(or_(*conditions))
+
+        total = int((await self.db.execute(count_stmt)).scalar_one())
+
+        sort_columns = {
+            "device": func.lower(
+                func.coalesce(
+                    DeviceRecord.alias,
+                    DeviceRecord.model,
+                    DeviceRecord.serial,
+                )
+            ),
+            "uid": DeviceRecord.uid,
+            "status": DeviceRecord.status,
+            "last_seen": DeviceRecord.last_seen,
+        }
+        sort_column = sort_columns.get(sort_by or "")
+        if sort_column is not None:
+            ordering = sort_column.asc() if sort_order == "asc" else sort_column.desc()
+            page_stmt = page_stmt.order_by(ordering.nulls_last())
+        page_stmt = page_stmt.order_by(DeviceRecord.updated_at.desc())
+        page_stmt = page_stmt.offset((page - 1) * page_size).limit(page_size)
+        result = await self.db.execute(page_stmt)
+        return list(result.scalars().all()), total
 
     async def upsert_device(
         self,

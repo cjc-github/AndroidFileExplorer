@@ -137,6 +137,15 @@ class DeviceInfo(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class DevicePage(BaseModel):
+    """One page of the device list."""
+
+    items: list[DeviceInfo] = Field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    page_size: int = 20
+
+
 class FileInfo(BaseModel):
     """One entry of a device directory listing."""
 

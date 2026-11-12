@@ -117,6 +117,113 @@ def test_device_list_refresh_discovers_devices(client):
     assert device["uid"]
 
 
+def test_device_list_paginates_and_filters(client):
+    """The paged endpoint returns one page, the global total and a filter."""
+    transport = client.transport
+    for serial, model in (
+        ("device-alpha", "Alpha"),
+        ("device-beta", "Beta"),
+        ("device-gamma", "Gamma"),
+    ):
+        transport._devices.append(
+            DeviceEntry(serial=serial, state="device", model=model)
+        )
+
+    async def _seed_all() -> None:
+        from app.services.registry import DeviceRegistry
+
+        async with db_session.async_session_maker() as session:
+            registry = DeviceRegistry(session)
+            for entry in transport._devices:
+                await registry.upsert_device(transport, entry, None)
+
+    run_sync(_seed_all())
+
+    first = client.get(
+        "/api/v1/devices", params={"page": 1, "page_size": 2}
+    ).json()["data"]
+    assert first["total"] == 4
+    assert first["page"] == 1
+    assert first["page_size"] == 2
+    assert len(first["items"]) == 2
+
+    second = client.get(
+        "/api/v1/devices", params={"page": 2, "page_size": 2}
+    ).json()["data"]
+    assert second["total"] == 4
+    assert len(second["items"]) == 2
+    assert {item["uid"] for item in first["items"]}.isdisjoint(
+        {item["uid"] for item in second["items"]}
+    )
+
+    sorted_page = client.get(
+        "/api/v1/devices",
+        params={
+            "page": 1,
+            "page_size": 10,
+            "sort_by": "device",
+            "sort_order": "asc",
+        },
+    ).json()["data"]
+    names = [
+        item["alias"] or item["model"] or item["serial"]
+        for item in sorted_page["items"]
+    ]
+    assert names == sorted(names, key=str.lower)
+
+    filtered = client.get(
+        "/api/v1/devices",
+        params={"page": 1, "page_size": 20, "keyword": "beta"},
+    ).json()["data"]
+    assert filtered["total"] == 1
+    assert filtered["items"][0]["serial"] == "device-beta"
+
+
+def test_device_list_page_only_samples_the_current_page(client, monkeypatch):
+    """Pagination exists to keep polling cheap: other pages are not sampled."""
+    transport = client.transport
+    for serial in ("page-a", "page-b", "page-c"):
+        transport._devices.append(
+            DeviceEntry(serial=serial, state="device", model=serial)
+        )
+
+    async def _seed_all() -> None:
+        from app.services.registry import DeviceRegistry
+
+        async with db_session.async_session_maker() as session:
+            registry = DeviceRegistry(session)
+            for entry in transport._devices:
+                await registry.upsert_device(transport, entry, None)
+
+    run_sync(_seed_all())
+
+    collector = get_metrics_collector()
+    for entry in transport._devices:
+        collector.reset(
+            build_device_uid(transport.kind, transport.endpoint, entry.serial)
+        )
+
+    sampled: list[str] = []
+
+    async def _counting_metrics(serial):
+        sampled.append(serial)
+        return await FakeTransport.metrics(transport, serial)
+
+    monkeypatch.setattr(transport, "metrics", _counting_metrics)
+
+    body = client.get(
+        "/api/v1/devices", params={"page": 1, "page_size": 2}
+    ).json()["data"]
+    assert len(body["items"]) == 2
+    assert len(sampled) == 2
+    assert set(sampled) == {item["serial"] for item in body["items"]}
+
+
+def test_device_list_rejects_invalid_page_size(client):
+    response = client.get("/api/v1/devices", params={"page": 1, "page_size": 0})
+    assert response.status_code == 422
+
+
 def test_device_detail_carries_metrics(client):
     uid = _seed_device(client)
     response = client.get(f"/api/v1/devices/{uid}")
