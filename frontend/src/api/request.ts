@@ -85,6 +85,34 @@ export function extractErrorMessage(error: unknown): string {
   return "请求失败";
 }
 
+/**
+ * Extract a message from a failed blob request (downloads).
+ *
+ * With ``responseType: "blob"`` axios stores the JSON error body as a Blob,
+ * so the synchronous extractor cannot read it.
+ */
+export async function extractErrorMessageAsync(error: unknown): Promise<string> {
+  if (axios.isAxiosError(error)) {
+    const data = error.response?.data;
+    if (typeof Blob !== "undefined" && data instanceof Blob) {
+      try {
+        const text = await data.text();
+        try {
+          const parsed = JSON.parse(text) as { detail?: unknown; message?: unknown };
+          if (typeof parsed.detail === "string" && parsed.detail) return parsed.detail;
+          if (typeof parsed.message === "string" && parsed.message) return parsed.message;
+        } catch {
+          // Not JSON: use the raw text when it looks human readable.
+        }
+        if (text.trim()) return text.trim();
+      } catch {
+        // Ignore unreadable blobs and fall through to the generic message.
+      }
+    }
+  }
+  return extractErrorMessage(error);
+}
+
 /** True when the failure is caused by a missing permission / root access. */
 export function isPermissionError(error: unknown): boolean {
   const message = extractErrorMessage(error);

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Alert,
   App,
   Badge,
   Button,
@@ -17,14 +18,21 @@ import {
   Typography,
 } from "antd";
 import type { TableProps } from "antd";
-import { ApiOutlined, DeleteOutlined, PlusOutlined } from "@ant-design/icons";
+import {
+  ApiOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  PlusOutlined,
+} from "@ant-design/icons";
 
 import {
   createEngine,
   deleteEngine,
   getEngineList,
   testEngine,
+  updateEngine,
 } from "@/api";
+import { extractErrorMessage } from "@/api/request";
 import type { Engine } from "@/api/types";
 import { formatTime } from "@/utils/format";
 
@@ -55,6 +63,7 @@ export function MachinesPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
+  const [editing, setEditing] = useState<Engine | null>(null);
   const [form] = Form.useForm();
   const connectionMode = Form.useWatch("connection", form) ?? "agent";
 
@@ -64,16 +73,61 @@ export function MachinesPage() {
     refetchInterval: 5000,
   });
 
+  const closeModal = () => {
+    setModalOpen(false);
+    setEditing(null);
+    form.resetFields();
+  };
+
+  const openCreate = () => {
+    setEditing(null);
+    form.resetFields();
+    form.setFieldsValue({ connection: "agent", ssh_port: 22 });
+    setModalOpen(true);
+  };
+
+  const openEdit = (engine: Engine) => {
+    setEditing(engine);
+    form.resetFields();
+    form.setFieldsValue({
+      name: engine.name || engine.host,
+      host: engine.host,
+      connection: engine.kind === "ssh" ? "ssh" : "agent",
+      port: engine.kind === "ssh" ? undefined : engine.port,
+      ssh_port: engine.kind === "ssh" ? engine.ssh_port : 22,
+      ssh_username: engine.ssh_username ?? undefined,
+      // Secrets are never returned by the API: leave the fields blank to
+      // keep the stored value, type a new one to rotate it.
+      token: undefined,
+      ssh_password: undefined,
+      adb_path: engine.adb_path ?? undefined,
+    });
+    setModalOpen(true);
+  };
+
   const createMutation = useMutation({
     mutationFn: createEngine,
     onSuccess: (engine, _vars, context) => {
       void context;
       queryClient.invalidateQueries({ queryKey: ["engines"] });
-      setModalOpen(false);
-      form.resetFields();
+      closeModal();
       message.success(`机器「${engine.name || engine.host}」已登记`);
     },
     onError: (error: Error) => message.error(error.message || "登记失败"),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (payload: {
+      id: number;
+      body: Parameters<typeof updateEngine>[1];
+    }) => updateEngine(payload.id, payload.body),
+    onSuccess: (engine) => {
+      queryClient.invalidateQueries({ queryKey: ["engines"] });
+      queryClient.invalidateQueries({ queryKey: ["devices"] });
+      closeModal();
+      message.success(`机器「${engine.name || engine.host}」配置已保存`);
+    },
+    onError: (error: Error) => message.error(error.message || "保存失败"),
   });
 
   const testMutation = useMutation({
@@ -115,6 +169,13 @@ export function MachinesPage() {
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               {meta.hint}
             </Typography.Text>
+            {record.kind === "ssh" ? (
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                {record.has_ssh_password
+                  ? "已保存 SSH 密码"
+                  : "使用本机 SSH 密钥"}
+              </Typography.Text>
+            ) : null}
           </div>
         );
       },
@@ -188,8 +249,17 @@ export function MachinesPage() {
         <Space size={4}>
           <Button
             size="small"
+            icon={<EditOutlined />}
+            onClick={() => openEdit(record)}
+          >
+            编辑
+          </Button>
+          <Button
+            size="small"
             icon={<ApiOutlined />}
-            loading={testMutation.isPending}
+            loading={
+              testMutation.isPending && testMutation.variables === record.id
+            }
             onClick={() => testMutation.mutate(record.id)}
           >
             测试连接
@@ -226,41 +296,76 @@ export function MachinesPage() {
         <Button
           type="primary"
           icon={<PlusOutlined />}
-          onClick={() => setModalOpen(true)}
+          onClick={openCreate}
         >
           新增机器
         </Button>
       </Space>
+
+      {enginesQuery.isError ? (
+        <Alert
+          type="error"
+          showIcon
+          style={{ marginBottom: 12 }}
+          message="机器列表加载失败"
+          description={extractErrorMessage(enginesQuery.error)}
+          action={
+            <Button size="small" onClick={() => enginesQuery.refetch()}>
+              重试
+            </Button>
+          }
+        />
+      ) : null}
 
       <Table
         rowKey="id"
         size="small"
         dataSource={enginesQuery.data ?? []}
         columns={columns}
-        loading={enginesQuery.isFetching}
+        loading={enginesQuery.isPending}
         pagination={false}
         locale={{ emptyText: "暂无机器，点击右上角新增" }}
       />
 
       <Modal
-        title="新增远程机器"
+        title={editing ? "编辑机器" : "新增远程机器"}
         open={modalOpen}
-        onCancel={() => setModalOpen(false)}
+        onCancel={closeModal}
         onOk={() => form.submit()}
-        confirmLoading={createMutation.isPending}
-        okText="登记并探测"
+        confirmLoading={
+          editing ? updateMutation.isPending : createMutation.isPending
+        }
+        okText={editing ? "保存" : "登记并探测"}
         cancelText="取消"
+        forceRender
       >
         <Form
           form={form}
           layout="vertical"
           onFinish={(values) => {
             const isSsh = values.connection === "ssh";
-            createMutation.mutate({
-              ...values,
-              kind: isSsh ? "ssh" : "remote",
+            const body = {
+              name: values.name,
+              host: values.host,
               port: isSsh ? (values.ssh_port ?? 22) : values.port,
-            });
+              adb_path: values.adb_path ?? undefined,
+              ...(isSsh
+                ? {
+                    ssh_port: values.ssh_port ?? 22,
+                    ssh_username: values.ssh_username,
+                    // Blank means "keep the stored secret" while editing.
+                    ssh_password: values.ssh_password || undefined,
+                  }
+                : { token: values.token || undefined }),
+            };
+            if (editing) {
+              updateMutation.mutate({ id: editing.id, body });
+            } else {
+              createMutation.mutate({
+                ...body,
+                kind: isSsh ? "ssh" : "remote",
+              });
+            }
           }}
         >
           <Form.Item
@@ -275,10 +380,14 @@ export function MachinesPage() {
             label="主机地址"
             rules={[{ required: true, message: "请输入主机地址" }]}
           >
-            <Input placeholder="例如：192.168.114.130" />
+            <Input
+              placeholder="例如：192.168.114.130"
+              disabled={editing?.kind === "local"}
+            />
           </Form.Item>
           <Form.Item name="connection" label="连接方式" initialValue="agent">
             <Radio.Group
+              disabled={Boolean(editing)}
               options={[
                 { value: "agent", label: "部署 agent（MDD 端口）" },
                 { value: "ssh", label: "SSH 直连（无需部署）" },
@@ -295,12 +404,22 @@ export function MachinesPage() {
                 label="agent 端口"
                 rules={[{ required: true, message: "请输入端口" }]}
               >
-                <InputNumber min={1} max={65535} style={{ width: "100%" }} placeholder="12345" />
+                <InputNumber
+                  min={1}
+                  max={65535}
+                  style={{ width: "100%" }}
+                  placeholder="12345"
+                  disabled={editing?.kind === "local"}
+                />
               </Form.Item>
               <Form.Item
                 name="token"
                 label="共享密钥"
-                extra="设备侧 agent 的认证密钥；留空表示不启用认证"
+                extra={
+                  editing
+                    ? "留空表示保留现有密钥；填写新值才会替换"
+                    : "设备侧 agent 的认证密钥；留空表示不启用认证"
+                }
               >
                 <Input.Password placeholder="例如：a-long-random-secret" />
               </Form.Item>
@@ -324,15 +443,19 @@ export function MachinesPage() {
               <Form.Item
                 name="ssh_password"
                 label="SSH 密码"
-                extra="留空时使用本机已配置的 SSH 密钥免密登录"
+                extra={
+                  editing
+                    ? "留空表示保留已保存的密码；填写新值才会替换"
+                    : "留空时使用本机已配置的 SSH 密钥免密登录"
+                }
               >
                 <Input.Password placeholder="用户密码；内网环境请知悉保管范围" />
               </Form.Item>
-              <Form.Item name="adb_path" label="adb 路径（可选）">
-                <Input placeholder="adb 不在 PATH 时填写，例如 /usr/lib/android-sdk/platform-tools/adb" />
-              </Form.Item>
             </>
           )}
+          <Form.Item name="adb_path" label="adb 路径（可选）">
+            <Input placeholder="adb 不在 PATH 时填写，例如 /usr/lib/android-sdk/platform-tools/adb" />
+          </Form.Item>
         </Form>
       </Modal>
     </div>

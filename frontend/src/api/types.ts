@@ -98,6 +98,13 @@ export interface FileList {
   truncated: boolean;
 }
 
+export interface FilePreview {
+  kind: "text" | "image" | "binary";
+  content?: string;
+  content_type?: string;
+  size?: number;
+}
+
 export interface TransferInfo {
   ok: boolean;
   path: string;
