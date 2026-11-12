@@ -35,9 +35,7 @@ case "${1:-start}" in
     ;;
 esac
 
-if [[ ! -x "${VENV_PY}" ]]; then
-  echo "[error] virtualenv missing: ${VENV_PY}" >&2
-  echo "        python3 -m venv .venv && .venv/bin/pip install -r backend/requirements.txt" >&2
+if ! bash "${ROOT_DIR}/scripts/check-env.sh"; then
   exit 1
 fi
 

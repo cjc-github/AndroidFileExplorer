@@ -36,6 +36,58 @@ def run(client: MddClient, command: str, timeout: int = 30) -> tuple[bool, str]:
     return result.success, (result.message or "").strip()
 
 
+def preflight(client: MddClient) -> bool:
+    """Check remote python3 / adb BEFORE transferring the agent."""
+    print("[1/5] 远端环境检查 ...")
+    checks = (
+        (
+            "python3",
+            "command -v python3",
+            "远端缺少 python3",
+            "在远端安装 Python 3.10+（例如 apt install python3）",
+            False,
+        ),
+        (
+            "Python 版本",
+            'python3 -c "import sys; print(sys.version_info >= (3, 10))"',
+            "远端 Python 版本低于 3.10",
+            "升级远端 Python 到 3.10 或更高版本",
+            True,
+        ),
+        (
+            "adb",
+            "command -v adb",
+            "远端缺少 adb",
+            "在远端安装 Android platform-tools，并确保 adb 在 PATH 中",
+            False,
+        ),
+        (
+            "adb version",
+            "adb version",
+            "远端 adb 无法执行",
+            "重新安装 Android platform-tools",
+            False,
+        ),
+        (
+            "adb devices",
+            "adb devices -l",
+            "远端 adb devices 执行失败",
+            "检查远端 adb server 是否可用",
+            False,
+        ),
+    )
+
+    for label, command, missing, hint, expect_true in checks:
+        ok, output = run(client, command, timeout=30)
+        first = output.splitlines()[0] if output else ""
+        print(f"      {label}: {'OK' if ok else 'FAIL'} {first[:120]}")
+        if not ok or (expect_true and "True" not in output):
+            print(f"[error] {missing}", file=sys.stderr)
+            print(f"        修复: {hint}", file=sys.stderr)
+            return False
+    return True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Deploy the device agent")
     parser.add_argument("--host", required=True)
@@ -67,7 +119,7 @@ def main() -> int:
 
     payload = base64.b64encode(agent_path.read_bytes()).decode()
     chunks = [payload[i : i + CHUNK_SIZE] for i in range(0, len(payload), CHUNK_SIZE)]
-    print(f"[1/4] agent 文件 {agent_path} -> base64 {len(payload)} 字节, {len(chunks)} 块")
+    print(f"[2/5] agent 文件 {agent_path} -> base64 {len(payload)} 字节, {len(chunks)} 块")
 
     client = MddClient(args.host, args.port, connect_timeout=10, command_timeout=60)
     try:
@@ -77,6 +129,9 @@ def main() -> int:
         return 1
 
     try:
+        if not preflight(client):
+            return 1
+
         ok, out = run(
             client,
             f"mkdir -p {shlex.quote(args.remote_dir)} && rm -f ~/afe-agent.b64",
@@ -85,7 +140,7 @@ def main() -> int:
             print(f"[error] 创建目录失败: {out}", file=sys.stderr)
             return 1
 
-        print("[2/4] 传输中 ...")
+        print("[3/5] 传输中 ...")
         for index, chunk in enumerate(chunks, start=1):
             ok, out = run(
                 client,
@@ -96,7 +151,7 @@ def main() -> int:
                 print(f"[error] 第 {index} 块传输失败: {out}", file=sys.stderr)
                 return 1
 
-        print("[3/4] 解码并校验 ...")
+        print("[4/5] 解码并校验 ...")
         target = f"{args.remote_dir}/agent.py"
         ok, out = run(
             client,
@@ -112,10 +167,10 @@ def main() -> int:
             return 1
 
         if not args.start:
-            print("[4/4] 已传输（未启动）。加 --start 可直接启动。")
+            print("[5/5] 已传输（未启动）。加 --start 可直接启动。")
             return 0
 
-        print("[4/4] 启动 agent ...")
+        print("[5/5] 启动 agent ...")
         log = f"{args.remote_dir}/agent.log"
         pid_file = f"{args.remote_dir}/agent.pid"
         # `$HOME` instead of `~`: the tilde is not expanded inside the

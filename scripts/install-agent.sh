@@ -23,9 +23,7 @@ if [[ -z "${HOST}" ]]; then
 fi
 
 PYTHON="${ROOT_DIR}/.venv/bin/python"
-if [[ ! -x "${PYTHON}" ]]; then
-  echo "[error] 找不到虚拟环境: ${PYTHON}" >&2
-  echo "        python3 -m venv .venv && .venv/bin/pip install -r backend/requirements.txt" >&2
+if ! bash "${ROOT_DIR}/scripts/check-env.sh" --backend-only; then
   exit 1
 fi
 
@@ -45,7 +43,7 @@ API="${API_BASE:-http://127.0.0.1:8010/api/v1}"
 curl -s -X POST "${API}/engines" \
   -H "Content-Type: application/json" \
   -d "{\"name\":\"agent ${HOST}:${REMOTE_AGENT_PORT}\",\"host\":\"${HOST}\",\"port\":${REMOTE_AGENT_PORT},\"kind\":\"remote\"}" \
-  | python3 -c "
+  | "${PYTHON}" -c "
 import json, sys
 result = json.load(sys.stdin)
 print('  ', result.get('message'))
