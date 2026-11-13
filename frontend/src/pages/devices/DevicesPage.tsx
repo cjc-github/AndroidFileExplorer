@@ -12,6 +12,7 @@ import {
   Button,
   Descriptions,
   Drawer,
+  Dropdown,
   Empty,
   Input,
   Modal,
@@ -27,6 +28,7 @@ import {
   EditOutlined,
   FileSearchOutlined,
   InfoCircleOutlined,
+  MoreOutlined,
   ReloadOutlined,
   SafetyOutlined,
   SearchOutlined,
@@ -455,7 +457,7 @@ export function DevicesPage() {
       title: "唯一标识 UID",
       dataIndex: "uid",
       key: "uid",
-      width: 160,
+      width: 126,
       render: (value: string) => (
         <Typography.Text
           type="secondary"
@@ -469,7 +471,7 @@ export function DevicesPage() {
       title: "状态",
       dataIndex: "status",
       key: "status",
-      width: 100,
+      width: 78,
       render: (value: Device["status"]) => (
         <Tag color={deviceStatusColor[value] ?? "default"}>
           {deviceStatusLabel[value] ?? value}
@@ -477,17 +479,9 @@ export function DevicesPage() {
       ),
     },
     {
-      title: "Root",
-      dataIndex: "is_rooted",
-      key: "root",
-      width: 80,
-      render: (value: boolean) =>
-        value ? <Tag color="gold">root</Tag> : <Tag>否</Tag>,
-    },
-    {
       title: "系统",
       key: "system",
-      width: 190,
+      width: 170,
       render: (_, record) => {
         const version = record.android_version;
         const api = record.api_level;
@@ -511,7 +505,7 @@ export function DevicesPage() {
     {
       title: "CPU",
       key: "cpu",
-      width: 140,
+      width: 130,
       render: (_, record) => {
         const cores = record.cpu_cores;
         const currentGhz =
@@ -565,7 +559,7 @@ export function DevicesPage() {
     {
       title: "内存",
       key: "memory",
-      width: 120,
+      width: 100,
       render: (_, record) => {
         const placeholder = metricPlaceholder(record);
         if (placeholder) return placeholder;
@@ -599,7 +593,7 @@ export function DevicesPage() {
     {
       title: "存储",
       key: "storage",
-      width: 180,
+      width: 170,
       render: (_, record) => {
         const placeholder = metricPlaceholder(record);
         if (placeholder) return placeholder;
@@ -618,7 +612,7 @@ export function DevicesPage() {
                   : `${label} 暂无数据`
               }
             >
-              <div style={{ width: 160 }}>
+              <div style={{ width: 148 }}>
                 <Space
                   size={4}
                   style={{ width: "100%", justifyContent: "space-between" }}
@@ -658,102 +652,80 @@ export function DevicesPage() {
       render: (value: string | null) => formatTime(value),
     },
     {
-      title: "错误",
-      dataIndex: "last_error",
-      key: "last_error",
-      width: 180,
-      render: (value: string | null) =>
-        value ? (
-          <Typography.Text
-            type="danger"
-            style={{ fontSize: 12 }}
-            ellipsis={{ tooltip: value }}
-          >
-            {value}
-          </Typography.Text>
-        ) : (
-          "-"
-        ),
-    },
-    {
       title: "操作",
       key: "actions",
-      width: 250,
-      render: (_, record) => (
-        <Space size={4}>
-          <Tooltip title="查看完整设备信息">
-            <Button
-              size="small"
-              icon={<InfoCircleOutlined />}
-              onClick={() => setDetailUid(record.uid)}
-            />
-          </Tooltip>
-          <Tooltip title="浏览该设备的文件目录">
-            <Button
-              type="primary"
-              ghost
-              size="small"
-              icon={<FileSearchOutlined />}
-              disabled={record.status !== "online"}
-              onClick={() =>
-                navigate({ to: "/devices/$uid/files", params: { uid: record.uid } })
-              }
-            >
-              浏览文件
-            </Button>
-          </Tooltip>
-          <Tooltip
-            title={
-              record.is_rooted
-                ? "以 adb unroot 恢复为普通用户"
-                : "以 adb root 重启 adbd（生产版本设备会被拒绝）"
-            }
-          >
-            <Button
-              size="small"
-              icon={<SafetyOutlined />}
-              loading={
-                rootSwitchMutation.isPending &&
-                rootSwitchMutation.variables?.uid === record.uid
-              }
-              disabled={record.status !== "online"}
-              onClick={() =>
-                rootSwitchMutation.mutate({
-                  uid: record.uid,
-                  enable: !record.is_rooted,
-                })
-              }
-            >
-              {record.is_rooted ? "取消 root" : "尝试 root"}
-            </Button>
-          </Tooltip>
-          {record.is_network_device ? (
-            <>
+      width: 130,
+      render: (_, record) => {
+        const rootPending =
+          rootSwitchMutation.isPending &&
+          rootSwitchMutation.variables?.uid === record.uid;
+        const connectPending =
+          connectMutation.isPending &&
+          connectMutation.variables === record.uid;
+        const disconnectPending =
+          disconnectMutation.isPending &&
+          disconnectMutation.variables === record.uid;
+        const online = record.status === "online";
+        const menuItems = [
+          { key: "detail", icon: <InfoCircleOutlined />, label: "查看详情" },
+          {
+            key: "root",
+            icon: <SafetyOutlined />,
+            label: record.is_rooted ? "取消 root" : "尝试 root",
+            // 离线不可切 root；本行操作进行中禁用，避免重复提交
+            disabled: !online || rootPending,
+          },
+          ...(record.is_network_device
+            ? [
+                { key: "connect", label: "连接", disabled: connectPending },
+                {
+                  key: "disconnect",
+                  label: "断开",
+                  danger: true,
+                  disabled: disconnectPending,
+                },
+              ]
+            : []),
+        ];
+        return (
+          <Space size={4}>
+            <Tooltip title="浏览该设备的文件目录">
               <Button
+                type="primary"
+                ghost
                 size="small"
-                loading={
-                  connectMutation.isPending &&
-                  connectMutation.variables === record.uid
+                icon={<FileSearchOutlined />}
+                disabled={!online}
+                onClick={() =>
+                  navigate({ to: "/devices/$uid/files", params: { uid: record.uid } })
                 }
-                onClick={() => connectMutation.mutate(record.uid)}
               >
-                连接
+                浏览文件
               </Button>
-              <Button
-                size="small"
-                danger
-                loading={
-                  disconnectMutation.isPending &&
-                  disconnectMutation.variables === record.uid
-                }
-                onClick={() => disconnectMutation.mutate(record.uid)}
-              >
-                断开
-              </Button>
-            </>
-          ) : null}
-        </Space>
-      ),
+            </Tooltip>
+            <Dropdown
+              menu={{
+                items: menuItems,
+                onClick: ({ key }) => {
+                  if (key === "detail") setDetailUid(record.uid);
+                  if (key === "root")
+                    rootSwitchMutation.mutate({
+                      uid: record.uid,
+                      enable: !record.is_rooted,
+                    });
+                  if (key === "connect") connectMutation.mutate(record.uid);
+                  if (key === "disconnect")
+                    disconnectMutation.mutate(record.uid);
+                },
+              }}
+            >
+              <Tooltip title="更多操作">
+                <Button size="small" icon={<MoreOutlined />} />
+              </Tooltip>
+            </Dropdown>
+          </Space>
+        );
+      },
     },
   ];
 
