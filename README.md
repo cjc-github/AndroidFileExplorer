@@ -269,6 +269,7 @@ AndroidFileExplorer/
 ├── docs/
 │   ├── PLAN.md             实施计划（需求拆解 / 架构 / 里程碑 / 事故复盘）
 │   ├── FEATURES.md         功能点实现清单（勾选制，随交付更新）
+│   ├── DEVELOPMENT-STANDARDS.md  开发标准与迭代准则（每条都有真实出处）
 │   ├── TECHNICAL_IMPLEMENTATION.md  技术实现方案（模块 / 链路 / 关键决策）
 │   ├── AGENT.md            设备侧 agent 使用与运维指南
 │   ├── api-contract.md     HTTP 契约

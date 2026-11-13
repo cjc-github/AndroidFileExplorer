@@ -420,6 +420,7 @@ export function DevicesPage() {
     {
       title: "设备",
       key: "device",
+      width: 240,
       sorter: true,
       sortOrder: sortBy === "device" ? sortOrder : null,
       render: (_, record) => {
@@ -884,11 +885,13 @@ export function DevicesPage() {
         columns={columns}
         loading={devicesQuery.isPending}
         onChange={handleTableChange}
+        scroll={{ x: 2010 }}
         pagination={{
           current: page,
           pageSize,
           total: devicesQuery.data?.total ?? 0,
           showSizeChanger: true,
+          hideOnSinglePage: true,
           pageSizeOptions: [10, 20, 50, 100],
           showTotal: (total, range) =>
             range[0] === range[1]

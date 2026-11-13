@@ -1316,7 +1316,7 @@ export function FileBrowserPage() {
           rowKey="path"
           size="small"
           virtual
-          scroll={{ x: 1110, y: 520 }}
+          scroll={{ x: 1182, y: 520 }}
           rowSelection={{
             selectedRowKeys: selectedKeys,
             onChange: (keys) => setSelectedKeys(keys),

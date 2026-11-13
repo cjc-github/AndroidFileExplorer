@@ -75,6 +75,7 @@ export function FileBrowserPickerPage() {
     {
       title: "设备",
       key: "device",
+      width: 240,
       render: (_, record) => (
         <Space direction="vertical" size={0}>
           <Typography.Text strong>
@@ -178,11 +179,13 @@ export function FileBrowserPickerPage() {
         dataSource={devices}
         columns={columns}
         loading={devicesQuery.isPending}
+        scroll={{ x: "max-content" }}
         pagination={{
           current: page,
           pageSize,
           total: devicesQuery.data?.total ?? 0,
           showSizeChanger: true,
+          hideOnSinglePage: true,
           pageSizeOptions: [10, 20, 50, 100],
           showTotal: (total, range) =>
             range[0] === range[1]
