@@ -104,8 +104,9 @@ body {
   overflow: auto;
   padding: 16px;
   background: #fff;
-  margin: 12px;
-  border-radius: 8px;
+  /* The content area spans the full screen width: no outer gap and no
+     floating card - the sider hugs the left edge, the content the right. */
+  margin: 0;
 }
 
 .device-name {

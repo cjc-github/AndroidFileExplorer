@@ -43,7 +43,6 @@ export function SettingsPage() {
     <Space direction="vertical" size={16} style={{ width: "100%" }}>
       <Card
         title="平台设置"
-        style={{ maxWidth: 620 }}
         loading={settingsQuery.isLoading}
       >
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
@@ -108,7 +107,6 @@ export function SettingsPage() {
 
       <Card
         title="环境自检"
-        style={{ maxWidth: 760 }}
         loading={environmentQuery.isLoading}
         extra={
           <Button

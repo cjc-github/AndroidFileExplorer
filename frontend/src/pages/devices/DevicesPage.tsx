@@ -420,7 +420,7 @@ export function DevicesPage() {
     {
       title: "设备",
       key: "device",
-      width: 240,
+      width: 200,
       sorter: true,
       sortOrder: sortBy === "device" ? sortOrder : null,
       render: (_, record) => {
@@ -453,7 +453,7 @@ export function DevicesPage() {
       title: "唯一标识 UID",
       dataIndex: "uid",
       key: "uid",
-      width: 190,
+      width: 160,
       render: (value: string) => (
         <Typography.Text
           type="secondary"
@@ -467,7 +467,7 @@ export function DevicesPage() {
       title: "状态",
       dataIndex: "status",
       key: "status",
-      width: 110,
+      width: 100,
       render: (value: Device["status"]) => (
         <Tag color={deviceStatusColor[value] ?? "default"}>
           {deviceStatusLabel[value] ?? value}
@@ -485,7 +485,7 @@ export function DevicesPage() {
     {
       title: "系统",
       key: "system",
-      width: 210,
+      width: 190,
       render: (_, record) => {
         const version = record.android_version;
         const api = record.api_level;
@@ -509,7 +509,7 @@ export function DevicesPage() {
     {
       title: "CPU",
       key: "cpu",
-      width: 160,
+      width: 140,
       render: (_, record) => {
         const cores = record.cpu_cores;
         const currentGhz =
@@ -563,7 +563,7 @@ export function DevicesPage() {
     {
       title: "内存",
       key: "memory",
-      width: 130,
+      width: 120,
       render: (_, record) => {
         const placeholder = metricPlaceholder(record);
         if (placeholder) return placeholder;
@@ -597,7 +597,7 @@ export function DevicesPage() {
     {
       title: "存储",
       key: "storage",
-      width: 190,
+      width: 180,
       render: (_, record) => {
         const placeholder = metricPlaceholder(record);
         if (placeholder) return placeholder;
@@ -650,7 +650,7 @@ export function DevicesPage() {
       title: "最后在线",
       dataIndex: "last_seen",
       key: "last_seen",
-      width: 170,
+      width: 160,
       sorter: true,
       sortOrder: sortBy === "last_seen" ? sortOrder : null,
       render: (value: string | null) => formatTime(value),
@@ -659,7 +659,7 @@ export function DevicesPage() {
       title: "错误",
       dataIndex: "last_error",
       key: "last_error",
-      width: 200,
+      width: 180,
       render: (value: string | null) =>
         value ? (
           <Typography.Text
@@ -676,7 +676,7 @@ export function DevicesPage() {
     {
       title: "操作",
       key: "actions",
-      width: 290,
+      width: 250,
       render: (_, record) => (
         <Space size={4}>
           <Tooltip title="查看完整设备信息">
@@ -885,7 +885,7 @@ export function DevicesPage() {
         columns={columns}
         loading={devicesQuery.isPending}
         onChange={handleTableChange}
-        scroll={{ x: 2010 }}
+        scroll={{ x: "max-content" }}
         pagination={{
           current: page,
           pageSize,
