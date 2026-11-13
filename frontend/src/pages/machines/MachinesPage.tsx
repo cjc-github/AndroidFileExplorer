@@ -154,6 +154,7 @@ export function MachinesPage() {
       title: "名称",
       dataIndex: "name",
       key: "name",
+      width: 240,
       render: (value: string | null, record) => {
         const meta = KIND_META[record.kind] ?? {
           label: record.kind,
@@ -183,6 +184,7 @@ export function MachinesPage() {
     {
       title: "地址",
       key: "address",
+      width: 200,
       render: (_, record) => (
         <Typography.Text
           type="secondary"
@@ -197,6 +199,7 @@ export function MachinesPage() {
       title: "状态",
       dataIndex: "status",
       key: "status",
+      width: 100,
       render: (value: string) => (
         <Badge
           status={(engineStatusColor[value] ?? "default") as "success" | "default" | "error" | "warning"}
@@ -226,6 +229,7 @@ export function MachinesPage() {
       title: "错误信息",
       dataIndex: "last_error",
       key: "last_error",
+      width: 240,
       render: (value: string | null) =>
         value ? (
           <Tooltip title={value}>
@@ -244,7 +248,7 @@ export function MachinesPage() {
     {
       title: "操作",
       key: "actions",
-      width: 200,
+      width: 280,
       render: (_, record) => (
         <Space size={4}>
           <Button
@@ -323,6 +327,7 @@ export function MachinesPage() {
         dataSource={enginesQuery.data ?? []}
         columns={columns}
         loading={enginesQuery.isPending}
+        scroll={{ x: "max-content" }}
         pagination={false}
         locale={{ emptyText: "暂无机器，点击右上角新增" }}
       />
