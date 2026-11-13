@@ -63,6 +63,7 @@ import type { FileItem, FilePreview } from "@/api/types";
 import { deviceStatusLabel } from "@/api/status";
 import { useRefreshInterval } from "@/hooks/useRefreshInterval";
 import { formatBytes, formatTime } from "@/utils/format";
+import { useFillHeight } from "@/hooks/useFillHeight";
 
 /** Above this size the browser handles the download instead of a Blob. */
 const LARGE_DOWNLOAD_BYTES = 100 * 1024 * 1024;
@@ -77,6 +78,7 @@ function normalizePath(input: string): string {
 }
 
 export function FileBrowserPage() {
+  const { ref, height } = useFillHeight<HTMLDivElement>();
   const { uid } = useParams({ from: "/devices/$uid/files" });
   const navigate = useNavigate();
   const routeSearch = useSearch({ from: "/devices/$uid/files" });
@@ -812,7 +814,7 @@ export function FileBrowserPage() {
     : false;
 
   return (
-    <div>
+    <div className="page-fill">
       <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 12 }}>
         <Space>
           <Button icon={<SwapOutlined />} onClick={() => navigate({ to: "/files" })}>
@@ -1312,33 +1314,35 @@ export function FileBrowserPage() {
       ) : deviceOffline ? (
         <Empty description="设备当前不在线，无法浏览文件" />
       ) : (
-        <Table
-          rowKey="path"
-          size="small"
-          virtual
-          scroll={{ x: 1182, y: 520 }}
-          rowSelection={{
-            selectedRowKeys: selectedKeys,
-            onChange: (keys) => setSelectedKeys(keys),
-            preserveSelectedRowKeys: false,
-            // Virtual tables default to a much wider selection column;
-            // a checkbox only needs 32px.
-            columnWidth: 32,
-          }}
-          dataSource={data?.items ?? []}
-          columns={columns}
-          loading={filesQuery.isPending || deviceQuery.isPending}
-          pagination={false}
-          locale={{
-            emptyText: (
-              <Empty
-                description={
-                  searchMode ? "没有匹配的文件" : "该目录为空"
-                }
-              />
-            ),
-          }}
-        />
+        <div ref={ref} className="table-fill">
+          <Table
+            rowKey="path"
+            size="small"
+            virtual
+            scroll={{ x: 1182, y: height }}
+            rowSelection={{
+              selectedRowKeys: selectedKeys,
+              onChange: (keys) => setSelectedKeys(keys),
+              preserveSelectedRowKeys: false,
+              // Virtual tables default to a much wider selection column;
+              // a checkbox only needs 32px.
+              columnWidth: 32,
+            }}
+            dataSource={data?.items ?? []}
+            columns={columns}
+            loading={filesQuery.isPending || deviceQuery.isPending}
+            pagination={false}
+            locale={{
+              emptyText: (
+                <Empty
+                  description={
+                    searchMode ? "没有匹配的文件" : "该目录为空"
+                  }
+                />
+              ),
+            }}
+          />
+        </div>
       )}
     </div>
   );

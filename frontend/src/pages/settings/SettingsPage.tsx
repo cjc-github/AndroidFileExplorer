@@ -40,7 +40,8 @@ export function SettingsPage() {
   const values = settingsQuery.data;
 
   return (
-    <Space direction="vertical" size={16} style={{ width: "100%" }}>
+    <div className="settings-scroll">
+      <Space direction="vertical" size={16} style={{ width: "100%" }}>
       <Card
         title="平台设置"
         loading={settingsQuery.isLoading}
@@ -184,6 +185,7 @@ export function SettingsPage() {
           </Space>
         ) : null}
       </Card>
-    </Space>
+      </Space>
+    </div>
   );
 }

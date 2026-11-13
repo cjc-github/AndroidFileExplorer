@@ -48,6 +48,7 @@ import { deviceStatusColor, deviceStatusLabel } from "@/api/status";
 import { useEnvironmentCheck } from "@/hooks/useEnvironmentCheck";
 import { useRefreshInterval } from "@/hooks/useRefreshInterval";
 import { formatBytes, formatPercent, formatTime } from "@/utils/format";
+import { useFillHeight } from "@/hooks/useFillHeight";
 
 /** How often the foreground polls the runtime state (requirement R3). */
 export const POLL_INTERVAL_MS = 3000;
@@ -187,6 +188,7 @@ function DeviceDetail({ device }: { device: Device }) {
 }
 
 export function DevicesPage() {
+  const { ref, height } = useFillHeight<HTMLDivElement>();
   const { message, modal } = App.useApp();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -787,7 +789,7 @@ export function DevicesPage() {
   };
 
   return (
-    <div>
+    <div className="page-fill">
       <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 12 }}>
         <Space>
           <Typography.Text strong>设备资源管理</Typography.Text>
@@ -878,43 +880,46 @@ export function DevicesPage() {
         </Space>
       ) : null}
 
-      <Table
-        rowKey="uid"
-        size="small"
-        dataSource={devices}
-        columns={columns}
-        loading={devicesQuery.isPending}
-        onChange={handleTableChange}
-        scroll={{ x: "max-content" }}
-        pagination={{
-          current: page,
-          pageSize,
-          total: devicesQuery.data?.total ?? 0,
-          showSizeChanger: true,
-          hideOnSinglePage: true,
-          pageSizeOptions: [10, 20, 50, 100],
-          showTotal: (total, range) =>
-            range[0] === range[1]
-              ? `第 ${range[0]} 台 / 共 ${total} 台`
-              : `${range[0]}-${range[1]} / 共 ${total} 台`,
-        }}
-        rowSelection={{
-          selectedRowKeys: selectedUids,
-          preserveSelectedRowKeys: true,
-          onChange: (keys) => setSelectedUids(keys.map(String)),
-        }}
-        locale={{
-          emptyText: (
-            <Empty
-              description={
-                filter.trim()
-                  ? "没有匹配的设备"
-                  : "暂无设备，点击「同步」扫描本机与远程机器"
-              }
-            />
-          ),
-        }}
-      />
+      <div ref={ref} className="table-fill">
+        <Table
+          rowKey="uid"
+          size="small"
+          dataSource={devices}
+          columns={columns}
+          loading={devicesQuery.isPending}
+          onChange={handleTableChange}
+          sticky
+          scroll={{ x: "max-content", y: height }}
+          pagination={{
+            current: page,
+            pageSize,
+            total: devicesQuery.data?.total ?? 0,
+            showSizeChanger: true,
+            hideOnSinglePage: true,
+            pageSizeOptions: [10, 20, 50, 100],
+            showTotal: (total, range) =>
+              range[0] === range[1]
+                ? `第 ${range[0]} 台 / 共 ${total} 台`
+                : `${range[0]}-${range[1]} / 共 ${total} 台`,
+          }}
+          rowSelection={{
+            selectedRowKeys: selectedUids,
+            preserveSelectedRowKeys: true,
+            onChange: (keys) => setSelectedUids(keys.map(String)),
+          }}
+          locale={{
+            emptyText: (
+              <Empty
+                description={
+                  filter.trim()
+                    ? "没有匹配的设备"
+                    : "暂无设备，点击「同步」扫描本机与远程机器"
+                }
+              />
+            ),
+          }}
+        />
+      </div>
 
       <Drawer
         title={detailDevice ? deviceName(detailDevice) : "设备详情"}

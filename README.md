@@ -22,6 +22,9 @@ Android 设备文件资源 / 文件管理能力：**远程机器连接配置**�
 
 两个服务都绑定 `0.0.0.0`，可从局域网内任意机器访问。
 
+四个入口的页面都**满屏铺满**：顶栏与左侧菜单固定不动，页面内容在内容区内滚动，
+表格高度自适应视口（表头固定、分页与表格底边不被裁切），平台设置页滚动时卡片标题栏吸在顶部。
+
 ```bash
 ./scripts/start.sh          # 后台启动两个服务，日志在 ./logs/
 ./scripts/start.sh stop     # 停止
@@ -351,10 +354,10 @@ cd frontend && npm install && cd ..
 | 3 | 后端端到端（真实 uvicorn + 真实 HTTP） | 全部通过 |
 | 4 | 前端类型检查 + 生产构建 | `tsc -b` + `vite build` 通过 |
 | 5 | **真实浏览器逐页渲染检查（5 页）** | 50 项断言全 PASS |
-| 6 | **文件浏览交互检查**（路径直达 / 面包屑 / 越权提示） | 11 项断言全 PASS |
+| 6 | **文件浏览交互检查**（路径直达 / 面包屑 / 越权提示） | 19 项断言全 PASS |
 
-前端另有单元测试：`cd frontend && npm test`（vitest + happy-dom，18 用例：
-格式化工具 / 请求层错误提取 / `?token=` 引导 / ErrorBoundary）。
+前端另有单元测试：`cd frontend && npm test`（vitest + happy-dom，26 用例：
+格式化工具 / 请求层错误提取 / `?token=` 引导 / ErrorBoundary / 表格高度扣除 hook）。
 
 CI：`.github/workflows/ci.yml` 在 push / PR 上自动跑「后端 pytest + e2e smoke」
 与「前端 vitest + tsc/build」两个 job。

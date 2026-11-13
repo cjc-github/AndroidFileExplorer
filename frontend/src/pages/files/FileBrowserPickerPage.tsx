@@ -20,6 +20,7 @@ import type { Device } from "@/api/types";
 import { deviceStatusColor, deviceStatusLabel } from "@/api/status";
 import { useRefreshInterval } from "@/hooks/useRefreshInterval";
 import { formatTime } from "@/utils/format";
+import { useFillHeight } from "@/hooks/useFillHeight";
 
 /**
  * The entry point of the file browser.
@@ -28,6 +29,7 @@ import { formatTime } from "@/utils/format";
  * here instead of hiding the feature behind a button inside the device table.
  */
 export function FileBrowserPickerPage() {
+  const { ref, height } = useFillHeight<HTMLDivElement>();
   const navigate = useNavigate();
   const [keyword, setKeyword] = useState("");
   const [debouncedKeyword, setDebouncedKeyword] = useState("");
@@ -139,7 +141,7 @@ export function FileBrowserPickerPage() {
   ];
 
   return (
-    <div>
+    <div className="page-fill">
       <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 12 }}>
         <Space>
           <Typography.Text strong>文件浏览</Typography.Text>
@@ -173,45 +175,48 @@ export function FileBrowserPickerPage() {
         />
       ) : null}
 
-      <Table
-        rowKey="uid"
-        size="small"
-        dataSource={devices}
-        columns={columns}
-        loading={devicesQuery.isPending}
-        scroll={{ x: "max-content" }}
-        pagination={{
-          current: page,
-          pageSize,
-          total: devicesQuery.data?.total ?? 0,
-          showSizeChanger: true,
-          hideOnSinglePage: true,
-          pageSizeOptions: [10, 20, 50, 100],
-          showTotal: (total, range) =>
-            range[0] === range[1]
-              ? `第 ${range[0]} 台 / 共 ${total} 台`
-              : `${range[0]}-${range[1]} / 共 ${total} 台`,
-          onChange: (nextPage, nextPageSize) => {
-            if (nextPageSize !== pageSize) {
-              setPageSize(nextPageSize);
-              setPage(1);
-              return;
-            }
-            setPage(nextPage);
-          },
-        }}
-        locale={{
-          emptyText: (
-            <Empty
-              description={
-                keyword.trim()
-                  ? "没有匹配的设备"
-                  : "没有可浏览的设备。请先在「远程机器」登记机器并确保其上有设备在线"
+      <div ref={ref} className="table-fill">
+        <Table
+          rowKey="uid"
+          size="small"
+          dataSource={devices}
+          columns={columns}
+          loading={devicesQuery.isPending}
+          sticky
+          scroll={{ x: "max-content", y: height }}
+          pagination={{
+            current: page,
+            pageSize,
+            total: devicesQuery.data?.total ?? 0,
+            showSizeChanger: true,
+            hideOnSinglePage: true,
+            pageSizeOptions: [10, 20, 50, 100],
+            showTotal: (total, range) =>
+              range[0] === range[1]
+                ? `第 ${range[0]} 台 / 共 ${total} 台`
+                : `${range[0]}-${range[1]} / 共 ${total} 台`,
+            onChange: (nextPage, nextPageSize) => {
+              if (nextPageSize !== pageSize) {
+                setPageSize(nextPageSize);
+                setPage(1);
+                return;
               }
-            />
-          ),
-        }}
-      />
+              setPage(nextPage);
+            },
+          }}
+          locale={{
+            emptyText: (
+              <Empty
+                description={
+                  keyword.trim()
+                    ? "没有匹配的设备"
+                    : "没有可浏览的设备。请先在「远程机器」登记机器并确保其上有设备在线"
+                }
+              />
+            ),
+          }}
+        />
+      </div>
     </div>
   );
 }

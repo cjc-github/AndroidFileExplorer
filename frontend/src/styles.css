@@ -21,16 +21,21 @@ body {
   background: #f5f5f5;
 }
 
+/* The shell always fits the viewport: the header and sider stay put and only
+   the page content (or an inner table body) scrolls. */
 .app-shell {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .app-header {
   display: flex;
   align-items: baseline;
   gap: 12px;
+  flex: none;
   padding: 12px 20px;
   background: #fff;
   border-bottom: 1px solid #f0f0f0;
@@ -57,11 +62,13 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  flex: none;
   width: 96px;
   min-width: 96px;
   padding: 10px 6px;
   background: #fff;
   border-right: 1px solid #f0f0f0;
+  overflow-y: auto;
 }
 
 .sider-item {
@@ -98,15 +105,48 @@ body {
   white-space: nowrap;
 }
 
+/* The content area spans the full screen width: the sider hugs the left edge,
+   the content the right. Vertically it is a fixed region - pages scroll
+   internally so the header and menu never move. */
 .app-main {
   flex: 1;
   min-width: 0;
-  overflow: auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 16px;
   background: #fff;
-  /* The content area spans the full screen width: no outer gap and no
-     floating card - the sider hugs the left edge, the content the right. */
   margin: 0;
+}
+
+/* Every page root fills the content area; children with flex:1 grow to the
+   remaining height. min-height:0 lets flex children shrink below their
+   intrinsic content height, which is what keeps tall tables contained. */
+.page-fill {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+}
+
+.page-fill > * {
+  flex: none;
+}
+
+.page-fill > .page-scroll {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Wraps a table so it occupies the leftover height and scrolls internally
+   instead of pushing the whole page taller. */
+.table-fill {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .device-name {
@@ -126,4 +166,22 @@ body {
 
 .crumb-link:hover {
   color: #4096ff;
+}
+
+/* Settings page: the whole stack of cards scrolls inside the content area
+   while each card's title bar stays pinned to the top as you scroll. */
+.settings-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* 卡片被 antd <Space> 包进了 .ant-space-item，`> .ant-card` 这类直接子
+   选择器选不中，会让 top 落空（标题栏随内容滚走）。这里统一让每张卡片的
+   标题栏吸在滚动容器顶部：后一张滚上来时会自然盖住前一张。 */
+.settings-scroll .ant-card-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #fff;
 }

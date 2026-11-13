@@ -25,7 +25,7 @@
 | HTTP 客户端 | axios | 1.14.x | 统一请求封装 |
 | 设备侧 agent | Python 标准库 | 3.10+ | `socketserver.ThreadingTCPServer`，零第三方依赖 |
 | 测试 | pytest + pytest-asyncio | 8.x | 192 用例（含假 MDD 服务端） |
-| 前端测试 | vitest + happy-dom | 4.x | 18 用例（请求层 / 工具 / ErrorBoundary） |
+| 前端测试 | vitest + happy-dom | 4.x | 26 用例（请求层 / 工具 / ErrorBoundary / 表格高度） |
 | 渲染验证 | Chrome DevTools Protocol + headless chrome | - | 零 npm 依赖的真实浏览器检查 |
 
 **核心设计原则：自包含。** 除本机 `adb` 外不依赖任何外部组件；远程机器上只需
@@ -466,6 +466,27 @@ app.add_middleware(CORSMiddleware, ...)       # 最后加 = 最外层
   状态展示、按行测试连接 loading、错误态、首屏 loading。
 - **SettingsPage**：平台设置 + 环境自检卡片（状态/修复命令/重新检查）。
 
+### 4.4 满屏布局与表格高度（`styles.css` + `hooks/useFillHeight.ts`）
+
+- **纵向链条**：`.app-shell`（`100vh` + `overflow:hidden`）→ `.app-main`
+  （`display:flex; flex-direction:column`）→ `.page-fill`（`flex:1`）→
+  `.table-fill`（`flex:1; overflow:hidden`）。每一层都必须带 `min-height:0`——
+  flex 子项默认 `min-height:auto`，不肯收缩就会把整页撑高、顶出纵向滚动条。
+- **`scroll.y` 的真实语义**：antd 只把它作用在 `.ant-table-body` 的
+  `max-height` 上；固定表头 `.ant-table-header` 和分页 `.ant-table-pagination`
+  是它的**兄弟节点**，高度不计入 `scroll.y`。直接把容器高度当 `scroll.y`，
+  `表头 + 表体 + 分页` 就会超出 `.table-fill` 被 `overflow:hidden` 裁掉底边
+  （分页被切掉一半）。
+- **`useFillHeight` 回填的是「容器高度 − 表头 − 分页（含上下 margin）」**：
+  `ResizeObserver` 观察容器、表头、分页三者（列内容换行、视口缩放都会改变可用高度）；
+  表头/分页可能晚于首帧出现——数据到达后 antd 才按 `hideOnSinglePage` 决定
+  是否渲染分页——所以还有 `MutationObserver`，但它只在**新增节点里确实含表头或
+  分页类**时才重算：虚拟表格滚动会频繁增删行，无条件重算等于每帧读布局。
+- **设置页吸顶**：卡片被 antd `<Space>` 包进 `.ant-space-item`，
+  `> .ant-card` 这类直接子选择器选不中，`top` 落空后标题栏会随内容滚走；
+  选择器写成 `.settings-scroll .ant-card-head { top: 0 }`（后代选择器）
+  才吸得住——后一张卡片滚上来时自然盖住前一张。
+
 ---
 
 ## 5. 性能设计汇总
@@ -534,7 +555,7 @@ app.add_middleware(CORSMiddleware, ...)       # 最后加 = 最外层
 | 后端单测/集成 | `backend/tests/`（192 用例，28 个文件） | 覆盖：agent 协议与认证、信封解包、MDD 缓冲读、连接池并发、设备标识稳定性、文件操作、路径安全、root 切换、指标差分、迁移、鉴权、请求 ID、传输服务 |
 | 假件隔离 | `tests/fake_mdd_server.py`、假 Transport、计数假引擎 | 真实设备不可达环境下的完整链路验证 |
 | 后端 e2e | `scripts/e2e_demo.py`（TestClient）+ `live_server_check.py`（真 uvicorn + 真 HTTP） | 两级端到端 |
-| **前端单测** | `npm test`（vitest + happy-dom，零额外 runtime 依赖） | format 工具、请求层错误提取、`?token=` 引导、ErrorBoundary 行为 |
+| **前端单测** | `npm test`（vitest + happy-dom，零额外 runtime 依赖） | format 工具、请求层错误提取、`?token=` 引导、ErrorBoundary 行为、表格高度扣除（表头/分页不计入 `scroll.y`） |
 | 前端门禁 | `tsc -b && vite build` | 类型 + 构建 |
 | **真实浏览器渲染检查** | `scripts/render-check.sh`（headless chrome `--dump-dom`，零 npm 依赖） | 断言 `#root` 有实际内容——构建通过 ≠ 页面能渲染 |
 | **真实交互检查** | `scripts/file-browser-check.mjs`（Chrome DevTools Protocol 直连） | 填路径 → 跳转 → 点面包屑 → 看到权限告警 |

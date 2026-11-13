@@ -35,6 +35,7 @@ import {
 import { extractErrorMessage } from "@/api/request";
 import type { Engine } from "@/api/types";
 import { formatTime } from "@/utils/format";
+import { useFillHeight } from "@/hooks/useFillHeight";
 
 const KIND_META: Record<
   string,
@@ -62,6 +63,7 @@ const engineStatusColor: Record<string, string> = {
 export function MachinesPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
+  const { ref, height } = useFillHeight<HTMLDivElement>();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Engine | null>(null);
   const [form] = Form.useForm();
@@ -289,7 +291,7 @@ export function MachinesPage() {
   ];
 
   return (
-    <div>
+    <div className="page-fill">
       <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 12 }}>
         <Space>
           <Typography.Text strong>远程机器连接配置</Typography.Text>
@@ -321,16 +323,19 @@ export function MachinesPage() {
         />
       ) : null}
 
-      <Table
-        rowKey="id"
-        size="small"
-        dataSource={enginesQuery.data ?? []}
-        columns={columns}
-        loading={enginesQuery.isPending}
-        scroll={{ x: "max-content" }}
-        pagination={false}
-        locale={{ emptyText: "暂无机器，点击右上角新增" }}
-      />
+      <div ref={ref} className="table-fill">
+        <Table
+          rowKey="id"
+          size="small"
+          dataSource={enginesQuery.data ?? []}
+          columns={columns}
+          loading={enginesQuery.isPending}
+          sticky
+          scroll={{ x: "max-content", y: height }}
+          pagination={false}
+          locale={{ emptyText: "暂无机器，点击右上角新增" }}
+        />
+      </div>
 
       <Modal
         title={editing ? "编辑机器" : "新增远程机器"}
