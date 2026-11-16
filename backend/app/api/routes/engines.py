@@ -12,7 +12,7 @@ from app.core.response import BaseResponse
 from app.db.session import get_session
 from app.logger import logger
 from app.models.device import EngineRecord
-from app.schemas.device import EngineCreate, EngineInfo, EngineUpdate
+from app.schemas.device import AdbConnectRequest, EngineCreate, EngineInfo, EngineUpdate
 from app.services.registry import DeviceRegistry
 from app.services.transport_resolver import TransportResolver
 from app.state import get_transport_resolver
@@ -257,6 +257,61 @@ async def test_engine(
             "device_count": len(devices),
         },
         message=f"连接成功，探测到 {len(devices)} 台设备",
+    )
+
+
+@router.post(
+    "/{engine_id}/adb-connect",
+    response_model=BaseResponse[dict],
+    summary="主动连接网络设备",
+)
+async def adb_connect_device(
+    engine_id: int,
+    payload: AdbConnectRequest,
+    db: AsyncSession = Depends(get_session),
+    resolver: TransportResolver = Depends(get_transport_resolver),
+) -> BaseResponse[dict]:
+    """`adb connect` a network device by IP + port on one machine.
+
+    Unlike the reconnect endpoint this accepts an address the platform has
+    never seen, so the operator can reach a phone over Wi-Fi before it ever
+    shows up in `adb devices`. A successful connect is followed by an
+    immediate sync so the new device lands in the registry at once.
+    """
+    registry = DeviceRegistry(db)
+    engine = await registry.get_engine(engine_id)
+    if engine is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="机器不存在")
+
+    transport = resolver.for_engine(
+        engine.id,
+        kind=engine.kind,
+        host=engine.host,
+        port=engine.port,
+        token=engine.token,
+        ssh_username=engine.ssh_username,
+        ssh_password=engine.ssh_password,
+        ssh_port=engine.ssh_port,
+        adb_path=engine.adb_path,
+    )
+
+    serial = f"{payload.ip}:{payload.port}"
+    ok, output = await transport.connect(serial)
+    if not ok:
+        # `adb connect` is chatty: report the raw output so the operator can
+        # tell "refused" (adbd not in tcpip mode) from "timeout" (wrong IP).
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"连接 {serial} 失败: {output or '设备无响应'}",
+        )
+
+    synced = await registry.sync_transport(transport, engine.id)
+    logger.info(
+        f"adb connect {serial} on engine {engine.id}: synced {len(synced)} device(s)"
+    )
+    return BaseResponse.success(
+        {"engine_id": engine.id, "serial": serial},
+        message=f"已连接 {serial}",
     )
 
 

@@ -216,6 +216,61 @@ def test_device_list_filters_by_engine(client):
     assert {item["serial"] for item in body["items"]} == {"local-a", "local-b"}
 
 
+def test_adb_connect_reaches_a_new_network_device(client, monkeypatch):
+    """Given an IP + port, the platform can `adb connect` a device it never
+    saw, and that device lands in the registry right after the connect."""
+    engines = client.get("/api/v1/engines").json()["data"]
+    local_id = next(engine["id"] for engine in engines if engine["kind"] == "local")
+    transport = client.transport
+    serial = "192.168.1.100:5555"
+
+    def _appear_after_connect(target):
+        async def _connect(self, target_serial):
+            self.connected.add(target_serial)
+            # A real `adb connect` makes the device visible to `adb devices`
+            # on the next listing - the sync right after relies on that.
+            self._devices.append(
+                DeviceEntry(serial=target_serial, state="device", model="WiFiPhone")
+            )
+            return True, f"connected to {target_serial}"
+
+        return _connect
+
+    monkeypatch.setattr(FakeTransport, "connect", _appear_after_connect(transport))
+
+    response = client.post(
+        f"/api/v1/engines/{local_id}/adb-connect",
+        json={"ip": "192.168.1.100", "port": 5555},
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["serial"] == serial
+    assert serial in transport.connected
+
+    body = client.get(
+        "/api/v1/devices",
+        params={"page": 1, "page_size": 20, "engine_id": local_id},
+    ).json()["data"]
+    assert serial in {item["serial"] for item in body["items"]}
+
+
+def test_adb_connect_rejects_an_unreachable_address(client, monkeypatch):
+    """A refused connect surfaces the raw adb output instead of a 500."""
+
+    async def _refuse(self, serial):
+        return False, "failed to connect to '10.0.0.9:5555': Connection refused"
+
+    monkeypatch.setattr(FakeTransport, "connect", _refuse)
+    engines = client.get("/api/v1/engines").json()["data"]
+    local_id = next(engine["id"] for engine in engines if engine["kind"] == "local")
+
+    response = client.post(
+        f"/api/v1/engines/{local_id}/adb-connect",
+        json={"ip": "10.0.0.9", "port": 5555},
+    )
+    assert response.status_code == 400
+    assert "Connection refused" in response.json()["detail"]
+
+
 def test_device_list_page_only_samples_the_current_page(client, monkeypatch):
     """Pagination exists to keep polling cheap: other pages are not sampled."""
     transport = client.transport

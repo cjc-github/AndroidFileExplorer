@@ -269,6 +269,24 @@ class DeviceAliasRequest(BaseModel):
     alias: str = Field(default="", max_length=200)
 
 
+class AdbConnectRequest(BaseModel):
+    """Payload to `adb connect` a network device by IP + port."""
+
+    ip: str = Field(min_length=1, max_length=45)
+    """IPv4 / IPv6 / hostname of the Android device."""
+
+    port: int = Field(default=5555, ge=1, le=65535)
+    """TCP port of the device's adbd; 5555 is the classic `adb tcpip` port."""
+
+    @field_validator("ip")
+    @classmethod
+    def strip_ip(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("ip 不能为空")
+        return cleaned
+
+
 class TransferInfo(BaseModel):
     """Outcome of a pull/push operation."""
 
