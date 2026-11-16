@@ -36,6 +36,7 @@ import {
 } from "@ant-design/icons";
 
 import {
+  adbConnectDevice,
   connectDevice,
   createEngine,
   deleteEngine,
@@ -84,6 +85,8 @@ function MachineDevicesPanel({ engine }: { engine: Engine }) {
   const queryClient = useQueryClient();
   const [aliasTarget, setAliasTarget] = useState<Device | null>(null);
   const [aliasValue, setAliasValue] = useState("");
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [connectForm] = Form.useForm();
   const hasSyncedRef = useRef(false);
 
   const devicesQuery = useQuery({
@@ -152,6 +155,20 @@ function MachineDevicesPanel({ engine }: { engine: Engine }) {
       message.success("已断开");
     },
     onError: (error: Error) => message.error(error.message || "断开失败"),
+  });
+
+  const adbConnectMutation = useMutation({
+    mutationFn: (payload: { ip: string; port: number }) =>
+      adbConnectDevice(engine.id, payload),
+    onSuccess: (result) => {
+      setConnectOpen(false);
+      connectForm.resetFields();
+      // The new device lands in the registry after the server-side sync, so
+      // an immediate refetch shows it without waiting for the poll cycle.
+      void invalidateDevices();
+      message.success(`已连接 ${result.serial}`);
+    },
+    onError: (error: Error) => message.error(error.message || "连接失败"),
   });
 
   const openAlias = (device: Device) => {
@@ -318,14 +335,26 @@ function MachineDevicesPanel({ engine }: { engine: Engine }) {
             </Typography.Text>
           ) : null}
         </div>
-        <Button
-          size="small"
-          icon={<ReloadOutlined />}
-          loading={devicesQuery.isFetching}
-          onClick={() => devicesQuery.refetch()}
-        >
-          刷新
-        </Button>
+        <Space size={8}>
+          <Button
+            size="small"
+            icon={<PlusOutlined />}
+            onClick={() => {
+              connectForm.resetFields();
+              setConnectOpen(true);
+            }}
+          >
+            连接新设备
+          </Button>
+          <Button
+            size="small"
+            icon={<ReloadOutlined />}
+            loading={devicesQuery.isFetching}
+            onClick={() => devicesQuery.refetch()}
+          >
+            刷新
+          </Button>
+        </Space>
       </div>
 
       {devicesQuery.isError ? (
@@ -386,6 +415,53 @@ function MachineDevicesPanel({ engine }: { engine: Engine }) {
             })
           }
         />
+      </Modal>
+
+      <Modal
+        title="连接网络设备"
+        open={connectOpen}
+        onCancel={() => setConnectOpen(false)}
+        onOk={() =>
+          connectForm.validateFields().then((values) => {
+            adbConnectMutation.mutate({
+              ip: values.ip.trim(),
+              port: values.port,
+            });
+          })
+        }
+        confirmLoading={adbConnectMutation.isPending}
+        okText="连接"
+        cancelText="取消"
+        destroyOnClose
+      >
+        <Form form={connectForm} layout="vertical" initialValues={{ port: 5555 }}>
+          <Form.Item
+            name="ip"
+            label="设备 IP / 主机名"
+            rules={[
+              { required: true, message: "请输入设备 IP 或主机名" },
+              {
+                pattern: /^[a-zA-Z0-9.:_-]+$/,
+                message: "仅支持 IPv4 / IPv6 / 主机名",
+              },
+            ]}
+          >
+            <Input placeholder="例如 192.168.1.100" autoFocus />
+          </Form.Item>
+          <Form.Item
+            name="port"
+            label="adbd 端口"
+            rules={[{ required: true, message: "请输入端口" }]}
+            extra="默认 5555；Android 11+ 无线调试端口见开发者选项"
+          >
+            <InputNumber
+              min={1}
+              max={65535}
+              style={{ width: "100%" }}
+              placeholder="5555"
+            />
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   );

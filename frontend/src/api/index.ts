@@ -257,6 +257,15 @@ export const testEngine = (engineId: number) =>
     request.post(`/engines/${engineId}/test`),
   );
 
+/** `adb connect` a network device by IP + port on one machine. */
+export const adbConnectDevice = (
+  engineId: number,
+  payload: { ip: string; port?: number },
+) =>
+  unwrap<{ engine_id: number; serial: string }>(
+    request.post(`/engines/${engineId}/adb-connect`, payload),
+  );
+
 /** Remove a machine (and its device rows). */
 export const deleteEngine = (engineId: number) =>
   unwrap<null>(request.delete(`/engines/${engineId}`));
