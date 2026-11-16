@@ -157,17 +157,21 @@ describe("useFillHeight", () => {
   }
 
   it("feeds scroll.y with the container height minus header and pagination", async () => {
-    await renderProbe();
+    const fill = await renderProbe();
     await flushResize();
 
     expect(document.querySelector<HTMLElement>("[data-height]")!.dataset.height).toBe("513");
+    // 同一个值也写进 --fill-height，表体 min-height 与 scroll.y（max-height）一致
+    expect(fill.style.getPropertyValue("--fill-height")).toBe("513px");
   });
 
   it("keeps the configured minimum height", async () => {
-    await renderProbe(1000);
+    const fill = await renderProbe(1000);
     await flushResize();
 
     expect(document.querySelector<HTMLElement>("[data-height]")!.dataset.height).toBe("1000");
+    // --fill-height 与兜底后的 scroll.y 同值，min/max 才不会互相打架
+    expect(fill.style.getPropertyValue("--fill-height")).toBe("1000px");
   });
 
   it("leaves the minimum untouched when the reserved chrome eats the box", async () => {
@@ -176,6 +180,8 @@ describe("useFillHeight", () => {
     await flushResize();
 
     expect(fill.dataset.height).toBe("10");
+    // 可用高度被表头/分页吃光时不写变量，表体回落为按内容收缩
+    expect(fill.style.getPropertyValue("--fill-height")).toBe("");
   });
 
   it("subtracts a pagination bar that shows up only after data arrives", async () => {

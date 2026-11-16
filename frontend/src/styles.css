@@ -149,6 +149,13 @@ body {
   overflow: hidden;
 }
 
+/* 设备少时 antd 的表体只有一行高，下方会露出页面背景，看起来像「表格没铺开」。
+   页面把可用高度以 --fill-height 传给这里，让表体本身撑满剩余空间
+   （= scroll.y 的 max-height），底部边框与分页始终贴住容器下沿。 */
+.table-fill .ant-table-body {
+  min-height: var(--fill-height, 0px);
+}
+
 .device-name {
   display: flex;
   flex-direction: column;

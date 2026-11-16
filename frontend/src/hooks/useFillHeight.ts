@@ -51,7 +51,15 @@ export function useFillHeight<T extends HTMLElement>(minHeight = 240) {
     const report = () => {
       const total = Math.round(el.getBoundingClientRect().height);
       const next = total - measureReservedHeight(el);
-      if (next > 0) setHeight(next);
+      if (next > 0) {
+        // scroll.y 对外暴露的是经过 minHeight 兜底的值，--fill-height 必须
+        // 取同一个兜底值，否则表体的 min-height 会低于 max-height，撑满失效。
+        const clamped = Math.max(minHeight, next);
+        setHeight(clamped);
+        // 交给样式表让表体撑满这块空间，设备/文件很少时也不会在表格下方
+        // 露出页面背景。
+        el.style.setProperty("--fill-height", `${clamped}px`);
+      }
     };
 
     const observer = new ResizeObserver(report);

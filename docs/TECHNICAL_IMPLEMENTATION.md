@@ -485,6 +485,14 @@ app.add_middleware(CORSMiddleware, ...)       # 最后加 = 最外层
   表头/分页可能晚于首帧出现——数据到达后 antd 才按 `hideOnSinglePage` 决定
   是否渲染分页——所以还有 `MutationObserver`，但它只在**新增节点里确实含表头或
   分页类**时才重算：虚拟表格滚动会频繁增删行，无条件重算等于每帧读布局。
+- **行数少时表体撑满剩余空间**：`scroll.y` 落在 `.ant-table-body` 上只是
+  `max-height`，行数不足时表体按内容收缩，表格下方露出页面背景，看起来像
+  「表格没铺开」。`useFillHeight` 量出可用高度的同时把同一个值（与 `scroll.y`
+  一样经过 `minHeight` 兜底）写入容器的 `--fill-height`，`styles.css` 用
+  `.table-fill .ant-table-body { min-height: var(--fill-height, 0px) }` 让表体
+  撑满剩余空间，底边与分页贴住容器下沿；容器小到被预留高度吃掉时不写入
+  （回落 `0px`），表体仍按内容收缩。虚拟表格（文件浏览页）没有
+  `.ant-table-body`，该规则自然不生效，高度由虚拟列表自身接管。
 - **设置页吸顶**：卡片被 antd `<Space>` 包进 `.ant-space-item`，
   `> .ant-card` 这类直接子选择器选不中，`top` 落空后标题栏会随内容滚走；
   选择器写成 `.settings-scroll .ant-card-head { top: 0 }`（后代选择器）
