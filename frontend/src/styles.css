@@ -192,3 +192,197 @@ body {
   z-index: 2;
   background: #fff;
 }
+
+/* ------------------------------------------------------------------ */
+/* Machines page: a light hero, a contained table card and an inset     */
+/* device panel for the expanded row.                                   */
+/* ------------------------------------------------------------------ */
+
+.page-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px 20px;
+  margin-bottom: 14px;
+  border: 1px solid #e6edf7;
+  border-radius: 16px;
+  background:
+    radial-gradient(120% 160% at 0% 0%, #edf5ff 0%, rgba(237, 245, 255, 0) 46%),
+    linear-gradient(135deg, #f8fbff 0%, #ffffff 60%);
+}
+
+.page-hero-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.page-hero-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 13px;
+  color: #fff;
+  font-size: 20px;
+  background: linear-gradient(135deg, #1668dc, #3f8ff0);
+  box-shadow: 0 6px 14px rgba(22, 104, 220, 0.28);
+}
+
+.page-hero-title {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #1f2733;
+}
+
+.page-hero-subtitle {
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #7a8494;
+}
+
+.page-hero-stats {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 2px 4px;
+}
+
+.hero-stat {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.hero-stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #1f2733;
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-stat-value.is-success {
+  color: #16a34a;
+}
+
+.hero-stat-label {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #8b95a5;
+}
+
+.machine-table-card {
+  border: 1px solid #e8edf4;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.machine-table-card .ant-table {
+  background: transparent;
+}
+
+.machine-table-card .ant-table-thead > tr > th {
+  background: #f8fafc;
+  color: #5d6675;
+  font-weight: 600;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.machine-table-card .ant-table-tbody > tr > td {
+  border-bottom: 1px solid #f2f5f9;
+}
+
+.machine-table-card .ant-table-tbody > tr:hover > td {
+  background: #f7faff;
+}
+
+.machine-expand-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #eef4fd;
+  color: #1668dc;
+}
+
+.machine-expand-btn:hover {
+  background: #dbeafe !important;
+  color: #1668dc !important;
+}
+
+.machine-expand-btn .anticon {
+  font-size: 11px;
+}
+
+.machine-devices {
+  margin: 2px 8px 10px;
+  padding: 14px 16px 16px;
+  border: 1px solid #e6edf7;
+  border-left: 3px solid #7cb2f7;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f8fbff 0%, #f4f7fc 100%);
+}
+
+.machine-devices-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.machine-devices-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.machine-devices-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: #e3efff;
+  color: #1668dc;
+  font-size: 15px;
+}
+
+.machine-devices-sub {
+  margin-top: 1px;
+  font-size: 12px;
+  color: #8b95a5;
+}
+
+.machine-devices .ant-table {
+  overflow: hidden;
+  border: 1px solid #e9eef6;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.machine-devices .ant-table-thead > tr > th {
+  background: #fbfcfe;
+  color: #5d6675;
+  font-weight: 600;
+}
+
+.machine-devices .ant-table-tbody > tr > td {
+  border-bottom: 1px solid #f3f6fa;
+}
+
+.machine-devices .ant-table-tbody > tr:hover > td {
+  background: #f8fbff;
+}
+
+.hero-stat-value.is-warning {
+  color: #d97706;
+}
