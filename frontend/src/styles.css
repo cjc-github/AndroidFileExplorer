@@ -17,8 +17,35 @@ body,
   padding: 0;
 }
 
+/* 全局隐藏滚动条轨道（保留滚动能力）：整页最右侧的滚动条来自 html/body，
+   这里统一隐藏，各内部滚动容器也会一并隐藏滚动条。 */
+html {
+  scrollbar-width: none;        /* Firefox */
+  -ms-overflow-style: none;     /* 旧版 IE/Edge */
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+/* 内部滚动容器（设置页、侧边菜单）同样隐藏滚动条，保留滚动能力。 */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 body {
   background: #f5f5f5;
+  overflow-y: hidden;
 }
 
 /* The shell always fits the viewport: the header and sider stay put and only
