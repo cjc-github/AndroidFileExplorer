@@ -142,8 +142,8 @@ export function FileBrowserPickerPage() {
 
   return (
     <div className="page-fill">
-      <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 12 }}>
-        <Space>
+      <Space wrap style={{ width: "100%", justifyContent: "space-between", marginBottom: 12 }}>
+        <Space wrap>
           <Typography.Text strong>文件浏览</Typography.Text>
           <Typography.Text type="secondary">先选择要浏览文件的设备</Typography.Text>
         </Space>

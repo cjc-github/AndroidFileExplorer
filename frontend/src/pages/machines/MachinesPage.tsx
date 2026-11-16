@@ -292,8 +292,8 @@ export function MachinesPage() {
 
   return (
     <div className="page-fill">
-      <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 12 }}>
-        <Space>
+      <Space wrap style={{ width: "100%", justifyContent: "space-between", marginBottom: 12 }}>
+        <Space wrap>
           <Typography.Text strong>远程机器连接配置</Typography.Text>
           <Typography.Text type="secondary">
             本机与远程 agent_server 机器，设备从这里被发现

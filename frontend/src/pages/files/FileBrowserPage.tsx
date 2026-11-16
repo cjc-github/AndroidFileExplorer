@@ -815,8 +815,8 @@ export function FileBrowserPage() {
 
   return (
     <div className="page-fill">
-      <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 12 }}>
-        <Space>
+      <Space wrap style={{ width: "100%", justifyContent: "space-between", marginBottom: 12 }}>
+        <Space wrap>
           <Button icon={<SwapOutlined />} onClick={() => navigate({ to: "/files" })}>
             切换设备
           </Button>

@@ -493,6 +493,9 @@ app.add_middleware(CORSMiddleware, ...)       # 最后加 = 最外层
   撑满剩余空间，底边与分页贴住容器下沿；容器小到被预留高度吃掉时不写入
   （回落 `0px`），表体仍按内容收缩。虚拟表格（文件浏览页）没有
   `.ant-table-body`，该规则自然不生效，高度由虚拟列表自身接管。
+- **页头工具栏允许换行**：各页页头的 `<Space>` 默认 `flex-wrap: nowrap`，
+  窄屏时标题、副标题与右侧操作挤在同一行互相溢出；外层与标题组加 `wrap`
+  后空间不足自动分两行，宽屏布局不变。
 - **设置页吸顶**：卡片被 antd `<Space>` 包进 `.ant-space-item`，
   `> .ant-card` 这类直接子选择器选不中，`top` 落空后标题栏会随内容滚走；
   选择器写成 `.settings-scroll .ant-card-head { top: 0 }`（后代选择器）

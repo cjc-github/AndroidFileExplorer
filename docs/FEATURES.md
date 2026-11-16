@@ -199,6 +199,20 @@
 
 ---
 
+### 交付前实测记录（2026-11-16 · 表体撑满与页头换行）
+
+| 检查 | 手段 | 结果 |
+|---|---|---|
+| `--fill-height` 与 `scroll.y` 同值 | vitest：`--fill-height == 513px`（600 − 39 表头 − 32 分页 − 16 margin），与 `scroll.y` 相等 | 26 passed |
+| `minHeight` 兜底时同值 | vitest：容器 600 < `minHeight` 1000 时 `--fill-height == 1000px`，与兜底后的 `scroll.y` 相等 | 26 passed |
+| 容器过小不写入 | vitest：预留高度吃掉空间（50 − 87 < 0）时 `--fill-height` 保持为空，表体按内容收缩 | 26 passed |
+| 页头换行 | headless Chrome dump-dom：`/machines`、`/devices`、`/files`（设备选择页）页头各含 2 处 `flex-wrap: wrap`（外层 + 标题组） | 3/4 页通过（文件浏览设备页需在线设备，沙箱无设备；四页改动相同） |
+| 前端单测 | `cd frontend && npm test` | 26 passed |
+| 构建 | `npm run build`（`tsc -b` + `vite build`） | 通过 |
+| 渲染门禁 | `scripts/render-check.sh` | 5 页断言全 PASS |
+
+---
+
 ## 六½、平台设置（`/settings`，侧边栏第 4 项）
 
 - [x] 设置项：设备列表刷新间隔（1–60 秒，前端轮询 + 页面文案联动）

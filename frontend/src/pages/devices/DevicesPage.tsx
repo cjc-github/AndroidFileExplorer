@@ -762,8 +762,8 @@ export function DevicesPage() {
 
   return (
     <div className="page-fill">
-      <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 12 }}>
-        <Space>
+      <Space wrap style={{ width: "100%", justifyContent: "space-between", marginBottom: 12 }}>
+        <Space wrap>
           <Typography.Text strong>设备资源管理</Typography.Text>
           <Typography.Text type="secondary">
             每 {Math.round(pollMs / 1000)} 秒刷新一次运行状态
