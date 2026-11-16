@@ -9,6 +9,8 @@ __pycache__/
 # Node / 前端
 node_modules/
 frontend/dist/
+# tsc -b 的增量构建缓存，每次构建必变，不入库（规范 8.3）
+*.tsbuildinfo
 
 # 运行时数据（SQLite 数据库、上传/下载暂存、拉取的文件）
 backend/data/
