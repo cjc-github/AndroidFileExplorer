@@ -26,6 +26,7 @@ export interface DevicePageQuery {
   keyword?: string;
   sortBy?: string;
   sortOrder?: "asc" | "desc";
+  engineId?: number;
   refresh?: boolean;
 }
 
@@ -36,6 +37,7 @@ export const getDevicePage = ({
   keyword,
   sortBy,
   sortOrder,
+  engineId,
   refresh = false,
 }: DevicePageQuery) =>
   unwrap<DevicePage>(
@@ -46,6 +48,7 @@ export const getDevicePage = ({
         keyword: keyword?.trim() || undefined,
         sort_by: sortBy || undefined,
         sort_order: sortOrder,
+        engine_id: engineId,
         ...(refresh ? { refresh: "true" } : {}),
       },
     }),

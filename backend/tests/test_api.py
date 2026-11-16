@@ -179,6 +179,43 @@ def test_device_list_paginates_and_filters(client):
     assert filtered["items"][0]["serial"] == "device-beta"
 
 
+def test_device_list_filters_by_engine(client):
+    """The machines page expands one machine and only needs its devices."""
+    engines = client.get("/api/v1/engines").json()["data"]
+    local_id = next(engine["id"] for engine in engines if engine["kind"] == "local")
+    transport = client.transport
+
+    async def _seed() -> None:
+        from app.services.registry import DeviceRegistry
+
+        async with db_session.async_session_maker() as session:
+            registry = DeviceRegistry(session)
+            await registry.upsert_device(
+                transport,
+                DeviceEntry(serial="local-a", state="device", model="LocalA"),
+                local_id,
+            )
+            await registry.upsert_device(
+                transport,
+                DeviceEntry(serial="local-b", state="device", model="LocalB"),
+                local_id,
+            )
+            await registry.upsert_device(
+                transport,
+                DeviceEntry(serial="orphan", state="device", model="Orphan"),
+                None,
+            )
+
+    run_sync(_seed())
+
+    body = client.get(
+        "/api/v1/devices",
+        params={"page": 1, "page_size": 20, "engine_id": local_id},
+    ).json()["data"]
+    assert body["total"] == 2
+    assert {item["serial"] for item in body["items"]} == {"local-a", "local-b"}
+
+
 def test_device_list_page_only_samples_the_current_page(client, monkeypatch):
     """Pagination exists to keep polling cheap: other pages are not sampled."""
     transport = client.transport

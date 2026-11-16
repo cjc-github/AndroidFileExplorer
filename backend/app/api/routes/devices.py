@@ -241,6 +241,10 @@ async def list_devices(
         max_length=200,
         description="按名称 / 型号 / 序列号 / UID / 品牌过滤，仅在分页模式生效",
     ),
+    engine_id: int | None = Query(
+        None,
+        description="按所属机器过滤，仅在分页模式生效",
+    ),
     sort_by: str | None = Query(
         None,
         pattern="^(device|uid|status|last_seen)$",
@@ -277,6 +281,7 @@ async def list_devices(
             page_size=page_size,
             sort_by=sort_by,
             sort_order=sort_order,
+            engine_id=engine_id,
         )
         infos = await _sample_devices(records, resolver, collector)
         return BaseResponse.success(

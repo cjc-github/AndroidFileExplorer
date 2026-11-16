@@ -11,7 +11,7 @@ import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.logger import logger
@@ -176,9 +176,12 @@ class DeviceRegistry:
     async def get_device(self, uid: str) -> DeviceRecord | None:
         return await self.db.get(DeviceRecord, uid)
 
-    async def list_devices(self) -> list[DeviceRecord]:
+    async def list_devices(self, engine_id: int | None = None) -> list[DeviceRecord]:
+        statement = select(DeviceRecord)
+        if engine_id is not None:
+            statement = statement.where(DeviceRecord.engine_id == engine_id)
         result = await self.db.execute(
-            select(DeviceRecord).order_by(DeviceRecord.updated_at.desc())
+            statement.order_by(DeviceRecord.updated_at.desc())
         )
         return list(result.scalars().all())
 
@@ -190,11 +193,14 @@ class DeviceRegistry:
         page_size: int,
         sort_by: str | None = None,
         sort_order: str = "desc",
+        engine_id: int | None = None,
     ) -> tuple[list[DeviceRecord], int]:
         """Return one page of devices plus the total row count.
 
         The keyword filter and the ordering run in SQL so they cover the
         whole registry, not only the rows already loaded into the browser.
+        ``engine_id`` narrows the result to the devices currently attributed
+        to one machine (the expanded row of the machines page).
         """
         conditions = []
         needle = (keyword or "").strip().lower()
@@ -208,11 +214,18 @@ class DeviceRegistry:
                 func.lower(DeviceRecord.brand).like(pattern),
             ]
 
+        filters = []
+        if conditions:
+            filters.append(or_(*conditions))
+        if engine_id is not None:
+            filters.append(DeviceRecord.engine_id == engine_id)
+
         count_stmt = select(func.count()).select_from(DeviceRecord)
         page_stmt = select(DeviceRecord)
-        if conditions:
-            count_stmt = count_stmt.where(or_(*conditions))
-            page_stmt = page_stmt.where(or_(*conditions))
+        if filters:
+            combined = and_(*filters)
+            count_stmt = count_stmt.where(combined)
+            page_stmt = page_stmt.where(combined)
 
         total = int((await self.db.execute(count_stmt)).scalar_one())
 
