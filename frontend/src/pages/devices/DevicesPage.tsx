@@ -16,7 +16,6 @@ import {
   Empty,
   Input,
   Modal,
-  Progress,
   Space,
   Table,
   Tag,
@@ -57,6 +56,12 @@ export const POLL_INTERVAL_MS = 3000;
 
 function storageOf(device: Device, path: string): DeviceStorage | null {
   return device.metrics?.storage?.find((item) => item.path === path) ?? null;
+}
+
+/** 使用率文本着色：<60% 正常、60~90% 告警、>=90% 危险。 */
+function metricColor(percent: number): { color: string } {
+  const color = percent >= 90 ? "#cf1322" : percent >= 60 ? "#d46b08" : "#389e0d";
+  return { color };
 }
 
 function storagePercent(item: DeviceStorage | null): number | null {
@@ -529,25 +534,21 @@ export function DevicesPage() {
           .filter(Boolean)
           .join(" · ");
         const placeholder = metricPlaceholder(record);
+        const percent = record.metrics?.cpu_percent;
         return (
-          <Space direction="vertical" size={2} align="center">
+          <Space direction="vertical" size={2}>
             {placeholder ??
-              (record.metrics?.cpu_percent === null ||
-              record.metrics?.cpu_percent === undefined ? (
+              (percent === null || percent === undefined ? (
                 <Typography.Text type="secondary">采样中…</Typography.Text>
               ) : (
-                <Progress
-                  type="circle"
-                  percent={record.metrics.cpu_percent}
-                  size={72}
-                  strokeWidth={9}
-                  format={() => formatPercent(record.metrics?.cpu_percent)}
-                />
+                <Typography.Text strong style={{ fontSize: 14 }}>
+                  使用率 <span style={metricColor(percent)}>{formatPercent(percent)}</span>
+                </Typography.Text>
               ))}
             {hardware ? (
               <Typography.Text
                 type="secondary"
-                style={{ fontSize: 12, textAlign: "center" }}
+                style={{ fontSize: 12 }}
               >
                 {hardware}
               </Typography.Text>
@@ -569,17 +570,12 @@ export function DevicesPage() {
         ) {
           return <Typography.Text type="secondary">采样中…</Typography.Text>;
         }
-        // The ring, the percentage and the amounts belong to ONE block:
-        // the gauge on top, the used / total underneath.
+        const percent = record.metrics.memory_percent;
         return (
-          <Space direction="vertical" size={2} align="center">
-            <Progress
-              type="circle"
-              percent={record.metrics.memory_percent}
-              size={72}
-              strokeWidth={9}
-              format={() => formatPercent(record.metrics?.memory_percent)}
-            />
+          <Space direction="vertical" size={2}>
+            <Typography.Text strong style={{ fontSize: 14 }}>
+              使用率 <span style={metricColor(percent)}>{formatPercent(percent)}</span>
+            </Typography.Text>
             <Typography.Text style={{ fontSize: 12, lineHeight: 1.3 }}>
               {formatBytes(record.metrics?.memory_used_bytes)}
             </Typography.Text>
@@ -604,6 +600,9 @@ export function DevicesPage() {
         }
         const row = (label: string, item: DeviceStorage | null) => {
           const percent = storagePercent(item);
+          const detail = item
+            ? `已用 ${formatBytes(item.used_bytes)} · 共 ${formatBytes(item.total_bytes)}`
+            : "暂无数据";
           return (
             <Tooltip
               title={
@@ -612,24 +611,23 @@ export function DevicesPage() {
                   : `${label} 暂无数据`
               }
             >
-              <div style={{ width: 148 }}>
-                <Space
-                  size={4}
-                  style={{ width: "100%", justifyContent: "space-between" }}
+              <div style={{ width: 148, lineHeight: 1.5 }}>
+                <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                  {label}
+                </Typography.Text>
+                <Typography.Text style={{ fontSize: 11, marginLeft: 6 }}>
+                  {percent != null ? (
+                    <span style={metricColor(percent)}>{percent.toFixed(0)}%</span>
+                  ) : (
+                    "-"
+                  )}
+                </Typography.Text>
+                <Typography.Text
+                  type="secondary"
+                  style={{ fontSize: 11, display: "block" }}
                 >
-                  <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                    {label}
-                  </Typography.Text>
-                  <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-                    {percent != null ? `${percent.toFixed(0)}%` : "-"}
-                  </Typography.Text>
-                </Space>
-                <Progress
-                  percent={percent ?? 0}
-                  size="small"
-                  showInfo={false}
-                  status={percent != null && percent >= 90 ? "exception" : "normal"}
-                />
+                  {detail}
+                </Typography.Text>
               </div>
             </Tooltip>
           );
