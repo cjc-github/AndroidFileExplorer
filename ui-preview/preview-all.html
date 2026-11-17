@@ -1,0 +1,1299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>四风格切换 · AFE 界面重构预览</title>
+<!--
+  AFE 界面重构 · 四合一实况切换预览
+  同一页面、同一份业务数据，右下角「界面风格」按钮（快捷键 1-4）在四种风格间即时切换：
+    A 蔚蓝科技（浅色专业）  B 夜色玻璃（暗色玻璃拟态）
+    C 极简工作台（Linear 风） D 运维控制台（深色高密度）
+  换肤只切换 token + 组件样式与少量结构变体（data-only 标记），功能与数据完全一致。
+  单文件静态预览稿：零依赖、零 CDN、双击即可离线打开；不修改工程内任何文件。
+-->
+<style>
+/* ================= 基础 = 方案 A 蔚蓝科技 ================= */
+:root{
+  --bg:#F2F7FE; --surface:#FFFFFF; --surface-2:#F5F9FF;
+  --border:#D8E3F2; --border-soft:#E6EEFA;
+  --text:#0B2545; --dim:#5A7290; --thead:#5d6675;
+  --brand:#1668dc; --brand-2:#4096ff; --brand-soft:#e6f4ff; --accent:#1668dc; --accent-soft:#e6f4ff;
+  --btn:linear-gradient(180deg,#2E7EF0,#1668dc);
+  --btn-shadow:0 4px 12px rgba(22,104,220,.26);
+  --success:#16a34a; --warn:#d97706; --danger:#ff4d4f; --gold:#d48806;
+  --shadow:0 1px 2px rgba(15,23,42,.04),0 4px 14px rgba(11,37,69,.05);
+  --hover:#f7faff; --barbg:#E3EDF9;
+  --radius:14px; --glass-blur:none; --tbl-font:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+*{scrollbar-width:none}
+::-webkit-scrollbar{width:0;height:0;display:none}
+html,body{height:100%}
+body{
+  font:13px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Roboto,"Helvetica Neue",Arial,sans-serif;
+  background:var(--bg);color:var(--text);color-scheme:light;overflow:hidden;
+}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Courier New",monospace}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.ic.sm{width:14px;height:14px}
+
+/* ===== 布局骨架 ===== */
+.app{position:relative;z-index:1;display:flex;height:100vh;overflow:hidden}
+.side{
+  width:208px;flex:none;background:var(--surface);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;transition:width .28s cubic-bezier(.2,.8,.25,1);overflow:hidden;
+}
+.side.collapsed{width:66px}
+.brand{display:flex;align-items:center;gap:10px;padding:16px 16px 14px;border-bottom:1px solid var(--border-soft)}
+.logo{width:34px;height:34px;flex:none;border-radius:10px;background:linear-gradient(135deg,#1668dc,#3f8ff0);
+  display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 6px 14px rgba(22,104,220,.28)}
+.logo .ic{width:18px;height:18px}
+.brand .bt{font-size:14px;font-weight:700;letter-spacing:.2px;white-space:nowrap}
+.brand .bs{font-size:10.5px;color:var(--dim);white-space:nowrap}
+.nav{flex:1;padding:12px 10px;display:flex;flex-direction:column;gap:2px;overflow-y:auto}
+.nav-group{font-size:10.5px;font-weight:600;color:var(--dim);letter-spacing:.6px;padding:10px 10px 6px;white-space:nowrap}
+.row{display:flex;align-items:center;gap:10px;height:38px;padding:0 10px;border-radius:9px;color:var(--dim);
+  cursor:pointer;user-select:none;white-space:nowrap;transition:background .15s,color .15s;position:relative}
+.row:hover{background:#f0f7ff;color:var(--brand)}
+.row.active{background:var(--brand-soft);color:var(--brand);font-weight:600}
+.row.active::before{content:"";position:absolute;left:-10px;top:8px;bottom:8px;width:3px;border-radius:2px;background:var(--brand)}
+.row .cnt{margin-left:auto;font-size:10.5px;font-weight:600;background:var(--brand-soft);color:var(--brand);
+  border-radius:999px;padding:1px 7px;font-style:normal}
+.side.collapsed .bt,.side.collapsed .bs,.side.collapsed .nav-group,.side.collapsed .row span,
+.side.collapsed .row .cnt,.side.collapsed .side-foot span{display:none}
+.side.collapsed .row{justify-content:center;padding:0}
+.side.collapsed .brand{justify-content:center;padding:16px 8px 14px}
+.side-foot{padding:12px 16px;border-top:1px solid var(--border-soft);font-size:11px;color:var(--dim);display:flex;align-items:center;gap:8px;white-space:nowrap}
+.dot-live{width:7px;height:7px;border-radius:50%;background:var(--success);flex:none;animation:breath 2.4s infinite}
+@keyframes breath{0%{box-shadow:0 0 0 0 rgba(22,163,74,.35)}70%{box-shadow:0 0 0 7px rgba(22,163,74,0)}100%{box-shadow:0 0 0 0 rgba(22,163,74,0)}}
+
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.topbar{height:56px;flex:none;display:flex;align-items:center;gap:12px;padding:0 20px;
+  background:var(--surface);border-bottom:1px solid var(--border)}
+.tb-brand{display:none;align-items:center;gap:8px;font-size:13px;font-weight:700;letter-spacing:.2px}
+.tb-logo{width:22px;height:22px;border-radius:6px;background:var(--brand);color:#fff;
+  display:flex;align-items:center;justify-content:center}
+.tb-logo .ic{width:12px;height:12px}
+.kbd{font-size:10px;color:#a1a1aa;border:1px solid var(--border);border-radius:4px;padding:0 4px;background:var(--surface)}
+.tb-hint{font-size:11.5px;color:var(--dim);display:none}
+.clock{display:none;font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--dim)}
+.crumbs{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--dim);min-width:0}
+.crumbs .c-home{font-weight:600;color:var(--text)}
+.crumb-sep{opacity:.5}
+#crumb-last{font-weight:600;color:var(--brand)}
+.topbar .sp{flex:1}
+.searchbox{display:flex;align-items:center;gap:8px;width:230px;height:32px;padding:0 12px;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:9px;color:var(--dim);transition:border-color .15s,box-shadow .15s}
+.searchbox:focus-within{border-color:var(--brand);box-shadow:0 0 0 3px rgba(22,104,220,.15)}
+.searchbox input{flex:1;border:0;outline:0;background:transparent;font:inherit;font-size:12.5px;color:var(--text)}
+.searchbox input::placeholder{color:var(--dim)}
+.pill{display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 12px;border-radius:999px;
+  background:var(--brand-soft);color:var(--brand);font-size:11.5px;font-weight:600}
+.avatar{width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#1668dc,#3f8ff0);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:700}
+.content{flex:1;overflow:auto;padding:18px 20px 36px}
+.page{display:none;animation:pageIn .34s cubic-bezier(.2,.8,.25,1)}
+.page.active{display:block}
+@keyframes pageIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* ===== 通用组件 ===== */
+.page-head{display:flex;align-items:center;gap:12px;margin-bottom:6px;flex-wrap:wrap}
+.page-head h2{font-size:19px;font-weight:700;letter-spacing:.2px}
+.page-sub{font-size:12px;color:var(--dim);margin-top:3px}
+.page-head .sp{flex:1}
+.mini-stats{display:none;align-items:center;gap:16px;font-size:12px;color:var(--dim)}
+.mini-stats b{color:var(--text);font-variant-numeric:tabular-nums;font-weight:650}
+.mini-stats b.ok{color:var(--success)} .mini-stats b.warn{color:var(--warn)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px}
+.stat{position:relative;overflow:hidden;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow)}
+.stat::after{content:"";position:absolute;right:-24px;top:-24px;width:88px;height:88px;border-radius:50%;
+  background:color-mix(in srgb,var(--sc,var(--brand)) 9%,transparent)}
+.stat .sl{font-size:11.5px;color:var(--dim);font-weight:500}
+.stat .sv{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:2px;color:var(--sc,var(--text))}
+.stat .ss{font-size:11px;color:var(--dim);margin-top:2px}
+.stat.c-ok{--sc:var(--success)} .stat.c-warn{--sc:var(--warn)} .stat.c-bad{--sc:var(--danger)} .stat.c-brand{--sc:var(--brand)}
+.led{display:none;width:8px;height:8px;border-radius:50%;flex:none}
+.led.ok{background:var(--success)} .led.off{background:var(--dim)} .led.warn{background:var(--warn)} .led.fail{background:var(--danger)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:16px;overflow:hidden}
+.card-head{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--border-soft);flex-wrap:wrap}
+.card-head .t{font-size:14px;font-weight:650}
+.card-head .s{font-size:12px;color:var(--dim)}
+.card-head .sp{flex:1}
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 13px;border-radius:9px;border:1px solid transparent;
+  font:inherit;font-size:12.5px;font-weight:500;cursor:pointer;white-space:nowrap;transition:all .15s}
+.btn.primary{background:var(--btn);color:#fff;box-shadow:var(--btn-shadow)}
+.btn.primary:hover{filter:brightness(1.06)}
+.btn.ghost{background:var(--surface);border-color:var(--border);color:var(--text)}
+.btn.ghost:hover{border-color:var(--brand);color:var(--brand);background:#f7faff}
+.btn.sm{height:27px;padding:0 10px;font-size:12px;border-radius:7px}
+.btn:disabled{opacity:.45;cursor:not-allowed;filter:none}
+.op-btn{display:inline-flex;align-items:center;gap:4px;height:26px;padding:0 9px;border-radius:7px;border:1px solid transparent;
+  font:inherit;font-size:12px;cursor:pointer;color:var(--dim);background:transparent;transition:all .15s}
+.op-btn:hover{color:var(--text);background:var(--hover)}
+.op-btn.kp{color:var(--brand);background:color-mix(in srgb,var(--brand) 8%,transparent)}
+.op-btn.kp:hover{color:var(--brand);background:color-mix(in srgb,var(--brand) 14%,transparent)}
+.op-btn.dis{color:var(--dim);background:transparent;opacity:.5;cursor:not-allowed}
+.op-btn.dis:hover{color:var(--dim);background:transparent}
+.input{height:32px;padding:0 11px;border:1px solid var(--border);border-radius:9px;background:var(--surface);
+  font:inherit;font-size:12.5px;color:var(--text);outline:0;transition:border-color .15s,box-shadow .15s}
+.input::placeholder{color:var(--dim)}
+.input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(22,104,220,.15)}
+.input.wide{width:220px}
+select.input{cursor:pointer}
+.tbl{width:100%;border-collapse:collapse;font-size:var(--tbl-font)}
+.tbl th{position:sticky;top:0;z-index:2;background:var(--surface-2);text-align:left;font-size:11px;font-weight:600;
+  color:var(--thead);padding:9px 9px;border-bottom:1px solid var(--border);white-space:nowrap;letter-spacing:.3px}
+.tbl th.sortable{cursor:pointer;user-select:none}
+.tbl th.sortable:hover{color:var(--brand)}
+.tbl th .arr{font-size:9px;margin-left:3px;opacity:.55}
+.tbl td{padding:8px 6px;border-bottom:1px solid var(--border-soft);vertical-align:middle;white-space:nowrap}
+.tbl tbody tr:last-child td{border-bottom:0}
+.tbl tbody tr{transition:background .12s}
+.tbl tbody tr:hover{background:var(--hover)}
+.cell-main{font-weight:600}
+.cell-sub{font-size:11px;color:var(--dim);margin-top:2px}
+.num{font-variant-numeric:tabular-nums}
+.tbl td.num{font-size:11px}
+.mcell{display:none;align-items:baseline;gap:8px}
+.mcell .mp{font-weight:600;font-variant-numeric:tabular-nums;font-size:12.5px}
+.mcell .mp.ok{color:var(--success)} .mcell .mp.warn{color:var(--warn)} .mcell .mp.bad{color:var(--danger)}
+.mcell .ms{font-size:10.5px;color:var(--dim)}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:2.5px 10px;border-radius:999px;font-size:11.5px;font-weight:550}
+.badge::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.badge.ok{color:var(--success);background:color-mix(in srgb,var(--success) 11%,transparent)}
+.badge.off{color:var(--dim);background:color-mix(in srgb,var(--dim) 12%,transparent)}
+.badge.warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 13%,transparent)}
+.badge.fail{color:var(--danger);background:color-mix(in srgb,var(--danger) 12%,transparent)}
+.badge.info{color:var(--brand);background:var(--brand-soft)}
+.tag{display:inline-block;padding:1px 7px;border-radius:5px;font-size:10.5px;font-weight:600;line-height:1.5}
+.tag-root{background:color-mix(in srgb,var(--gold) 14%,transparent);color:var(--gold)}
+.tag-kind{background:color-mix(in srgb,var(--brand) 10%,transparent);color:var(--brand)}
+.tag-kind.violet{background:color-mix(in srgb,#7c5cff 12%,transparent);color:#6d4de0}
+.tag-net{background:color-mix(in srgb,#0e9db8 12%,transparent);color:#0e9db8}
+.pill-cnt{display:inline-block;min-width:24px;text-align:center;padding:1px 9px;border-radius:999px;font-size:11px;
+  font-weight:600;background:color-mix(in srgb,var(--brand) 10%,transparent);color:var(--brand);font-variant-numeric:tabular-nums}
+.bar{display:inline-block;width:48px;height:5px;border-radius:3px;background:var(--barbg);overflow:hidden;vertical-align:middle}
+.bar i{display:block;height:100%;border-radius:3px;background:var(--brand)}
+.bar.warn i{background:var(--warn)} .bar.bad i{background:var(--danger)}
+.ring{width:30px;height:30px;transform:rotate(-90deg)}
+.ring .bg{fill:none;stroke:var(--barbg);stroke-width:4}
+.ring .fg{fill:none;stroke:var(--brand);stroke-width:4;stroke-linecap:round}
+.ring text{transform:rotate(90deg);transform-origin:15px 15px;font-size:8px;font-weight:700;fill:var(--text);text-anchor:middle;font-family:inherit}
+.ring-cell{display:flex;align-items:center;gap:9px}
+.st-row{display:flex;align-items:center;gap:6px;font-size:11.5px}
+.st-path{width:38px;color:var(--dim);font-family:ui-monospace,Consolas,monospace;font-size:10px}
+.st-num{width:30px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.st-sub{font-size:10.5px;color:var(--dim);margin:2px 0 5px 44px}
+.st-sub:last-child{margin-bottom:0}
+.switch{width:40px;height:22px;border-radius:999px;background:#cfdae9;position:relative;cursor:pointer;transition:background .2s;flex:none;border:0}
+.switch::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;
+  box-shadow:0 1px 3px rgba(15,23,42,.25);transition:left .2s}
+.switch.on{background:var(--brand)}
+.switch.on::after{left:20px}
+.cb{width:15px;height:15px;accent-color:var(--brand);cursor:pointer}
+.caret{width:24px;height:24px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--dim);
+  display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:all .15s}
+.caret:hover{color:var(--brand);border-color:var(--brand)}
+.caret .ic{width:13px;height:13px;transition:transform .2s}
+.caret.open .ic{transform:rotate(180deg)}
+.batchbar{display:none;align-items:center;gap:10px;padding:8px 14px;margin-bottom:12px;border-radius:11px;
+  background:var(--brand-soft);border:1px solid color-mix(in srgb,var(--brand) 22%,transparent)}
+.batchbar.show{display:flex}
+.batchbar .btag{font-size:12px;font-weight:650;color:var(--brand)}
+.empty{padding:44px 16px;text-align:center;color:var(--dim)}
+.empty .ic{width:34px;height:34px;margin:0 auto 10px;display:block;opacity:.4}
+.empty .et{font-size:13px;font-weight:600;color:var(--text)}
+.empty .es{font-size:12px;margin-top:3px}
+.tbl-foot{display:flex;align-items:center;padding:9px 14px;font-size:11.5px;color:var(--dim);border-top:1px solid var(--border-soft)}
+.tbl-foot .sp{flex:1}
+
+/* ===== hero（A/B 专属结构） ===== */
+.hero{
+  display:flex;align-items:center;gap:14px;padding:16px 20px;margin-bottom:16px;
+  border:1px solid #e6edf7;border-radius:var(--radius);
+  background:radial-gradient(120% 160% at 0% 0%,#edf5ff 0%,rgba(237,245,255,0) 46%),linear-gradient(135deg,#f8fbff 0%,#ffffff 60%);
+  box-shadow:var(--shadow);
+}
+.hero-icon{width:44px;height:44px;border-radius:13px;background:linear-gradient(135deg,#1668dc,#3f8ff0);color:#fff;
+  display:flex;align-items:center;justify-content:center;box-shadow:0 6px 14px rgba(22,104,220,.28);flex:none}
+.hero-icon .ic{width:21px;height:21px}
+.hero h2{font-size:18px;font-weight:700}
+.hero .hs{font-size:12px;color:#7a8494;margin-top:3px}
+.hero .sp{flex:1}
+.hero-stat{text-align:center;padding:0 18px;border-left:1px solid #e6edf7}
+.hero-stat .hv{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+.hero-stat .hl{font-size:11px;color:#8b95a5;margin-top:1px}
+.hero-stat .hv.ok{color:var(--success)} .hero-stat .hv.warn{color:var(--warn)}
+
+/* 展开行面板 */
+tr.expand-tr td{padding:0;background:linear-gradient(180deg,#f8fbff 0%,#f4f7fc 100%)}
+.expand-panel{border-left:3px solid #7cb2f7;padding:14px 18px 16px 16px}
+.ep-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.ep-head .t{font-size:13px;font-weight:650}
+.ep-head .s{font-size:11.5px;color:var(--dim)}
+.ep-head .sp{flex:1}
+.sub-tbl{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.sub-tbl .tbl td{padding:8px 12px;font-size:12px}
+.sub-tbl .tbl th{padding:7px 12px}
+
+/* 文件页 */
+.pathbar{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border-soft);flex-wrap:wrap}
+.pathbar .input.path{flex:1;min-width:260px;font-family:ui-monospace,Consolas,monospace}
+.breadcrumb{display:flex;align-items:center;gap:4px;padding:0 16px 10px;font-size:12px;color:var(--dim);flex-wrap:wrap}
+.breadcrumb a{color:var(--brand);text-decoration:none;cursor:pointer}
+.breadcrumb a:hover{text-decoration:underline}
+.breadcrumb .cur{color:var(--text);font-weight:600}
+.file-name{display:flex;align-items:center;gap:9px;min-width:0}
+.file-name .ic.folder{color:#e8a33d}
+.file-name .ic.file{color:#8ba3c2}
+.file-name .ic.link{color:#0e9db8}
+.perm{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;color:var(--dim)}
+.strip{display:flex;align-items:center;gap:12px;padding:9px 16px;border-bottom:1px solid var(--border-soft);background:var(--surface-2);font-size:12px}
+.strip .st-label{white-space:nowrap}
+.strip .bar{flex:1;max-width:340px}
+.strip .sp{flex:1}
+
+/* 设置页 */
+.settings-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:16px;align-items:start}
+.form-row{display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--border-soft)}
+.form-row:last-child{border-bottom:0}
+.form-row .fl{width:190px;flex:none}
+.form-row .fl .ft{font-size:12.5px;font-weight:600}
+.form-row .fl .fh{font-size:11px;color:var(--dim);margin-top:1px}
+.form-row .input{width:120px}
+.check-item{display:flex;align-items:flex-start;gap:12px;padding:11px 16px;border-bottom:1px solid var(--border-soft)}
+.check-item:last-child{border-bottom:0}
+.check-item .ci-main{flex:1;min-width:0}
+.ci-name{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600}
+.ci-name .opt{font-size:10px;color:var(--dim);font-weight:500}
+.ci-msg{font-size:11.5px;color:var(--dim);margin-top:2px}
+.ci-fix{margin-top:5px;display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:7px;
+  background:var(--surface-2);border:1px solid var(--border-soft);font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--dim)}
+.ci-fix:hover{color:var(--brand);border-color:var(--brand);cursor:pointer}
+
+/* ===== 风格切换器 ===== */
+.skinbar{position:fixed;right:16px;bottom:16px;z-index:999;display:flex;align-items:center;gap:4px;padding:6px;border-radius:999px;
+  background:rgba(16,22,36,.92);border:1px solid rgba(255,255,255,.16);box-shadow:0 10px 30px rgba(0,0,0,.35);backdrop-filter:blur(10px)}
+.skinbar .sb-label{font-size:11px;color:#9fb0d0;padding:0 6px 0 10px;white-space:nowrap}
+.sk{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:999px;border:0;background:transparent;
+  color:#c9d4ea;font:inherit;font-size:12px;cursor:pointer;transition:all .15s;white-space:nowrap}
+.sk b{width:18px;height:18px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:800;color:#fff;flex:none}
+.sk[data-skin="a"] b{background:#1668dc} .sk[data-skin="b"] b{background:#7c5cff}
+.sk[data-skin="c"] b{background:#18181b} .sk[data-skin="d"] b{background:#1f6feb}
+.sk:hover{background:rgba(255,255,255,.08)}
+.sk.active{background:rgba(255,255,255,.14);color:#fff;box-shadow:inset 0 0 0 1px rgba(255,255,255,.25)}
+.sb-hint{font-size:10px;color:#7a89a8;padding:0 10px 0 4px;white-space:nowrap}
+
+/* ================= 皮肤 B 夜色玻璃 ================= */
+body[data-skin="b"]{
+  --bg:#070A12; --surface:rgba(255,255,255,.055); --surface-2:rgba(255,255,255,.045);
+  --surface-solid:#131936; --border:rgba(255,255,255,.15); --border-soft:rgba(255,255,255,.09);
+  --text:#EEF1FF; --dim:#8E9BC4; --thead:#8E9BC4;
+  --brand:#7C5CFF; --brand-2:#A78BFA; --brand-soft:rgba(124,92,255,.16); --accent:#A78BFA; --accent-soft:rgba(124,92,255,.16);
+  --btn:linear-gradient(135deg,#8B6BFF,#7C5CFF);
+  --btn-shadow:0 6px 18px rgba(124,92,255,.38);
+  --success:#34D399; --warn:#FBBF24; --danger:#F87171; --gold:#FBBF24;
+  --shadow:0 0 34px rgba(124,92,255,.10),0 10px 30px rgba(0,0,0,.35);
+  --hover:rgba(255,255,255,.055); --barbg:rgba(255,255,255,.10);
+  --radius:14px; --glass-blur:blur(14px);
+  color-scheme:dark;
+}
+body[data-skin="b"]::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(760px 520px at 10% -10%,rgba(124,92,255,.30),transparent 62%),
+             radial-gradient(700px 500px at 92% 112%,rgba(56,189,248,.16),transparent 60%)}
+body[data-skin="b"] .side,body[data-skin="b"] .topbar,body[data-skin="b"] .card,body[data-skin="b"] .stat,
+body[data-skin="b"] .hero{backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur)}
+body[data-skin="b"] .logo{box-shadow:0 0 22px rgba(124,92,255,.45);background:linear-gradient(135deg,#8B6BFF,#6A48E8)}
+body[data-skin="b"] .row:hover{color:var(--text)}
+body[data-skin="b"] .row.active{color:var(--brand-2);box-shadow:inset 0 0 0 1px rgba(124,92,255,.35)}
+body[data-skin="b"] .row.active::before{box-shadow:0 0 10px rgba(124,92,255,.8)}
+body[data-skin="b"] .row .cnt{background:var(--brand-soft);color:var(--brand-2)}
+body[data-skin="b"] .dot-live{box-shadow:0 0 8px rgba(52,211,153,.9);animation:bBreath 2.4s infinite}
+@keyframes bBreath{0%{opacity:1}50%{opacity:.45}100%{opacity:1}}
+body[data-skin="b"] .avatar{background:linear-gradient(135deg,#8B6BFF,#6A48E8);box-shadow:0 0 14px rgba(124,92,255,.4)}
+body[data-skin="b"] .searchbox{background:rgba(255,255,255,.05)}
+body[data-skin="b"] .searchbox:focus-within{box-shadow:0 0 0 3px rgba(124,92,255,.22)}
+body[data-skin="b"] .pill{background:rgba(52,211,153,.12);color:var(--success);box-shadow:inset 0 0 0 1px rgba(52,211,153,.25)}
+body[data-skin="b"] .tbl td{padding:8px 6px}
+body[data-skin="b"] #crumb-last{color:var(--brand-2)}
+body[data-skin="b"] .stat::after{background:radial-gradient(circle,color-mix(in srgb,var(--sc,var(--brand)) 22%,transparent),transparent 70%)}
+body[data-skin="b"] .stat .sv{text-shadow:0 0 18px color-mix(in srgb,var(--sc,var(--brand)) 35%,transparent)}
+body[data-skin="b"] .btn.ghost{background:rgba(255,255,255,.04)}
+body[data-skin="b"] .btn.ghost:hover{border-color:var(--brand);color:var(--brand-2);background:rgba(124,92,255,.10)}
+body[data-skin="b"] .btn.primary:hover{filter:brightness(1.1)}
+body[data-skin="b"] .op-btn{color:var(--brand-2);background:rgba(124,92,255,.14)}
+body[data-skin="b"] .op-btn:hover{color:var(--brand-2);background:rgba(124,92,255,.24)}
+body[data-skin="b"] .op-btn.kp{color:var(--brand-2);background:rgba(124,92,255,.14)}
+body[data-skin="b"] .op-btn.kp:hover{background:rgba(124,92,255,.24)}
+body[data-skin="b"] .op-btn.dis{color:var(--dim);background:transparent}
+body[data-skin="b"] .op-btn.dis:hover{color:var(--dim);background:transparent}
+body[data-skin="b"] .input{background:rgba(255,255,255,.05)}
+body[data-skin="b"] .input:focus{box-shadow:0 0 0 3px rgba(124,92,255,.22)}
+body[data-skin="b"] .input option{background:#131936;color:var(--text)}
+body[data-skin="b"] .tbl th{background:var(--surface-solid)}
+body[data-skin="b"] .badge::before{box-shadow:0 0 7px currentColor}
+body[data-skin="b"] .badge.ok{background:rgba(52,211,153,.11);box-shadow:inset 0 0 0 1px rgba(52,211,153,.28)}
+body[data-skin="b"] .badge.off{background:rgba(142,155,196,.10);box-shadow:inset 0 0 0 1px rgba(142,155,196,.25)}
+body[data-skin="b"] .badge.warn{background:rgba(251,191,36,.11);box-shadow:inset 0 0 0 1px rgba(251,191,36,.28)}
+body[data-skin="b"] .badge.fail{background:rgba(248,113,113,.11);box-shadow:inset 0 0 0 1px rgba(248,113,113,.28)}
+body[data-skin="b"] .badge.info{color:var(--brand-2);background:var(--brand-soft);box-shadow:inset 0 0 0 1px rgba(124,92,255,.30)}
+body[data-skin="b"] .tag-root{background:rgba(251,191,36,.14);color:var(--gold);box-shadow:inset 0 0 0 1px rgba(251,191,36,.3)}
+body[data-skin="b"] .tag-kind{background:rgba(124,92,255,.14);color:var(--brand-2);box-shadow:inset 0 0 0 1px rgba(124,92,255,.3)}
+body[data-skin="b"] .tag-kind.violet{background:rgba(167,139,250,.14);color:var(--brand-2);box-shadow:inset 0 0 0 1px rgba(167,139,250,.3)}
+body[data-skin="b"] .tag-net{background:rgba(56,189,248,.13);color:#38BDF8;box-shadow:inset 0 0 0 1px rgba(56,189,248,.3)}
+body[data-skin="b"] .pill-cnt{background:rgba(124,92,255,.15);color:var(--brand-2)}
+body[data-skin="b"] .bar i{background:linear-gradient(90deg,var(--brand),var(--brand-2));box-shadow:0 0 8px rgba(124,92,255,.5)}
+body[data-skin="b"] .bar.warn i{background:linear-gradient(90deg,#D9A521,#FBBF24);box-shadow:0 0 8px rgba(251,191,36,.5)}
+body[data-skin="b"] .bar.bad i{background:linear-gradient(90deg,#E45C5C,#F87171);box-shadow:0 0 8px rgba(248,113,113,.5)}
+body[data-skin="b"] .ring{filter:drop-shadow(0 0 4px rgba(124,92,255,.35))}
+body[data-skin="b"] .ring .fg{stroke:var(--brand)}
+body[data-skin="b"] .switch{background:rgba(255,255,255,.12)}
+body[data-skin="b"] .switch::after{background:#c9d2ee;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+body[data-skin="b"] .switch.on{background:var(--brand);box-shadow:0 0 12px rgba(124,92,255,.5)}
+body[data-skin="b"] .caret{background:rgba(255,255,255,.04)}
+body[data-skin="b"] .caret:hover{color:var(--brand-2)}
+body[data-skin="b"] .batchbar{background:rgba(124,92,255,.12);border:1px solid rgba(124,92,255,.35)}
+body[data-skin="b"] .batchbar .btag{color:var(--brand-2)}
+body[data-skin="b"] .hero{border-color:var(--border);
+  background:linear-gradient(135deg,rgba(124,92,255,.14),rgba(255,255,255,.05) 45%,rgba(56,189,248,.08));position:relative;overflow:hidden}
+body[data-skin="b"] .hero::after{content:"";position:absolute;right:-60px;top:-80px;width:260px;height:260px;border-radius:50%;
+  background:radial-gradient(circle,rgba(124,92,255,.25),transparent 70%);pointer-events:none}
+body[data-skin="b"] .hero-icon{background:linear-gradient(135deg,#8B6BFF,#6A48E8);box-shadow:0 0 24px rgba(124,92,255,.55)}
+body[data-skin="b"] .hero-stat{border-left:1px solid var(--border-soft);position:relative;z-index:1}
+body[data-skin="b"] .hero-stat .hv{text-shadow:0 0 16px rgba(124,92,255,.4)}
+body[data-skin="b"] .hero-stat .hv.ok{text-shadow:0 0 16px rgba(52,211,153,.5)}
+body[data-skin="b"] .hero-stat .hv.warn{text-shadow:0 0 16px rgba(251,191,36,.5)}
+body[data-skin="b"] .hero .hs{color:var(--dim)}
+body[data-skin="b"] .hero-stat .hl{color:var(--dim)}
+body[data-skin="b"] tr.expand-tr td{background:rgba(124,92,255,.06)}
+body[data-skin="b"] .expand-panel{border-left-color:var(--brand);box-shadow:inset 3px 0 12px -6px rgba(124,92,255,.5)}
+body[data-skin="b"] .sub-tbl{background:rgba(255,255,255,.04);border:1px solid var(--border-soft)}
+body[data-skin="b"] .sub-tbl .tbl th{background:transparent;position:static}
+body[data-skin="b"] .strip{background:rgba(124,92,255,.08)}
+body[data-skin="b"] .file-name .ic.folder{color:#fbbf24}
+body[data-skin="b"] .file-name .ic.file{color:#8E9BC4}
+body[data-skin="b"] .file-name .ic.link{color:#38BDF8}
+body[data-skin="b"] .breadcrumb a{color:var(--brand-2)}
+body[data-skin="b"] .empty .ic{opacity:.5}
+
+/* ================= 皮肤 C 极简工作台 ================= */
+body[data-skin="c"]{
+  --bg:#fafafa; --surface:#FFFFFF; --surface-2:#f7f7f8;
+  --border:#e5e7eb; --border-soft:#ececee;
+  --text:#18181b; --dim:#71717a; --thead:#52525b;
+  --brand:#18181b; --brand-2:#18181b; --brand-soft:#efefef; --accent:#2563eb; --accent-soft:#eff4ff;
+  --btn:#18181b; --btn-shadow:none;
+  --success:#15803d; --warn:#b45309; --danger:#dc2626; --gold:#a16207;
+  --shadow:none; --hover:#f5f5f6; --barbg:#e9eaec;
+  --radius:10px; --glass-blur:none;
+}
+body[data-skin="c"] .side{width:184px;background:var(--bg)}
+body[data-skin="c"] .topbar{height:46px;padding:0 16px;gap:14px}
+body[data-skin="c"] .tb-brand{display:flex}
+body[data-skin="c"] .tb-hint{display:inline-flex}
+body[data-skin="c"] .tb-logo{background:var(--brand)}
+body[data-skin="c"] .content{padding:20px 22px 40px}
+body[data-skin="c"] .nav{padding:14px 10px}
+body[data-skin="c"] .row{height:32px;font-size:12.5px;gap:9px}
+body[data-skin="c"] .row:hover{background:#f0f0f1;color:var(--text)}
+body[data-skin="c"] .row.active{background:#efefef;color:var(--text)}
+body[data-skin="c"] .row.active::before{display:none}
+body[data-skin="c"] .row.active .ic{color:var(--accent)}
+body[data-skin="c"] .row .cnt{background:transparent;color:#a1a1aa;font-weight:500}
+body[data-skin="c"] #side-toggle,body[data-skin="d"] #side-toggle{display:none}
+body[data-skin="c"] .avatar{width:26px;height:26px;border-radius:6px;background:#e4e4e7;color:#3f3f46;font-size:11.5px}
+body[data-skin="c"] .searchbox{width:240px;height:28px;border-radius:7px;font-size:12px}
+body[data-skin="c"] .searchbox input{font-size:12.5px}
+body[data-skin="c"] .searchbox:focus-within{border-color:var(--accent);box-shadow:none}
+body[data-skin="c"] .page-head h2{font-size:16px;letter-spacing:-.1px}
+body[data-skin="c"] .page-head{margin-bottom:6px}
+body[data-skin="c"] .page-sub{margin-bottom:18px}
+body[data-skin="c"] .mini-stats{display:flex}
+body[data-skin="c"] .stats{gap:0;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:var(--surface);margin-bottom:20px;box-shadow:none}
+body[data-skin="c"] .stat{border-right:1px solid var(--border-soft);border-radius:0;box-shadow:none;padding:13px 18px}
+body[data-skin="c"] .stat:last-child{border-right:0}
+body[data-skin="c"] .stat::after{display:none}
+body[data-skin="c"] .stat .sv{font-size:22px;letter-spacing:-.3px;font-weight:650}
+body[data-skin="c"] .stat .sl{font-size:11px}
+body[data-skin="c"] .card{box-shadow:none}
+body[data-skin="c"] .card-head{padding:11px 16px}
+body[data-skin="c"] .card-head .t{font-size:13px}
+body[data-skin="c"] .btn{height:28px;font-size:12px;border-radius:7px}
+body[data-skin="c"] .btn.primary{background:var(--brand);box-shadow:none}
+body[data-skin="c"] .btn.primary:hover{background:#2d2d31;filter:none}
+body[data-skin="c"] .btn.ghost:hover{border-color:#c8c9cd;color:var(--text);background:var(--surface)}
+body[data-skin="c"] .btn.sm{height:26px;font-size:11.5px;border-radius:6px}
+body[data-skin="c"] .op-btn{border-radius:6px;height:24px;font-size:11.5px}
+body[data-skin="c"] .op-btn:hover{background:#f0f0f1}
+body[data-skin="c"] .op-btn.kp{color:var(--accent);background:transparent}
+body[data-skin="c"] .op-btn.kp:hover{background:var(--accent-soft);color:var(--accent)}
+body[data-skin="c"] .input{height:28px;border-radius:7px;font-size:12.5px}
+body[data-skin="c"] .input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(37,99,235,.12)}
+body[data-skin="c"] .tbl th{background:var(--surface);padding:8px 8px;font-size:10.5px;letter-spacing:.4px}
+body[data-skin="c"] .tbl td{padding:8px 6px}
+body[data-skin="c"] .tbl tbody tr:hover{background:#fafafa}
+body[data-skin="c"] .cell-main{font-weight:550}
+body[data-skin="c"] .badge{padding:0;border-radius:0;background:transparent!important;font-size:12px;font-weight:500}
+body[data-skin="c"] .tag{border-radius:4px;font-size:10px;line-height:1.7}
+body[data-skin="c"] .tag-root{background:#fdf3e1}
+body[data-skin="c"] .tag-kind{background:#eef2f7;color:#475569}
+body[data-skin="c"] .tag-kind.violet{background:#f1eefb;color:#6d5bb8}
+body[data-skin="c"] .tag-net{background:#e8f4f8;color:#0369a1}
+body[data-skin="c"] .pill-cnt{background:var(--surface-2);color:#3f3f46;font-weight:550}
+body[data-skin="c"] .bar i{background:#52525b}
+body[data-skin="c"] .bar.ok i{background:var(--success)}
+body[data-skin="c"] .mcell{display:flex}
+body[data-skin="c"] .mcell .ms{font-size:10px}
+body[data-skin="c"] .switch{width:32px;height:18px}
+body[data-skin="c"] .switch::after{width:14px;height:14px}
+body[data-skin="c"] .switch.on{background:var(--brand)}
+body[data-skin="c"] .switch.on::after{left:16px}
+body[data-skin="c"] .cb{width:14px;height:14px}
+body[data-skin="c"] .caret{border:0;background:transparent;width:20px;height:20px;border-radius:5px}
+body[data-skin="c"] .caret:hover{background:#f0f0f1}
+body[data-skin="c"] .batchbar{background:#f0f4fb;border:1px solid #d8e2f5;border-radius:8px}
+body[data-skin="c"] .batchbar .btag{color:var(--accent)}
+body[data-skin="c"] tr.expand-tr td{background:#fcfcfc}
+body[data-skin="c"] .expand-panel{border-left:2px solid var(--accent);padding:13px 18px 15px 16px}
+body[data-skin="c"] .sub-tbl{border-radius:8px}
+body[data-skin="c"] .sub-tbl .tbl th{background:#fafafa}
+body[data-skin="c"] .sub-tbl .tbl td{padding:7px 12px;font-size:12px}
+body[data-skin="c"] .file-name .ic.folder{color:#d97706}
+body[data-skin="c"] .file-name .ic.file{color:#a1a1aa}
+body[data-skin="c"] .file-name .ic.link{color:#0369a1}
+body[data-skin="c"] .breadcrumb a{color:var(--accent)}
+body[data-skin="c"] .strip{background:var(--surface-2)}
+body[data-skin="c"] .avatar{border-radius:6px}
+body[data-skin="c"] .side-foot{font-size:11px}
+
+/* ================= 皮肤 D 运维控制台 ================= */
+body[data-skin="d"]{
+  --bg:#0d1117; --surface:#161b22; --surface-2:#1c2129;
+  --border:#30363d; --border-soft:#21262d;
+  --text:#e6edf3; --dim:#8b949e; --thead:#8b949e;
+  --brand:#58a6ff; --brand-2:#58a6ff; --brand-soft:rgba(88,166,255,.14); --accent:#58a6ff; --accent-soft:rgba(88,166,255,.14);
+  --btn:#1f6feb; --btn-shadow:none;
+  --success:#3fb950; --warn:#d29922; --danger:#f85149; --gold:#d29922;
+  --shadow:none; --hover:#1d232c; --barbg:#2d333b;
+  --radius:8px; --glass-blur:none; --tbl-font:10.5px;
+  color-scheme:dark;
+  font-size:12.5px;
+}
+body[data-skin="d"] .side{width:196px}
+body[data-skin="d"] .topbar{height:44px;padding:0 16px;gap:10px}
+body[data-skin="d"] .clock{display:inline-block}
+body[data-skin="d"] .pill{background:rgba(63,185,80,.10);border:1px solid rgba(63,185,80,.35);color:var(--success);
+  font-family:ui-monospace,Consolas,monospace;height:26px;font-size:11px}
+body[data-skin="d"] .avatar{width:26px;height:26px;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);color:var(--dim);font-size:11px}
+body[data-skin="d"] .searchbox{width:220px;height:28px;border-radius:6px;background:var(--bg)}
+body[data-skin="d"] .searchbox input{font-family:ui-monospace,Consolas,monospace;font-size:12px}
+body[data-skin="d"] .searchbox:focus-within{box-shadow:none}
+body[data-skin="d"] .logo{width:28px;height:28px;border-radius:7px;background:var(--brand-soft);border:1px solid rgba(88,166,255,.4);color:var(--brand);box-shadow:none}
+body[data-skin="d"] .logo .ic{width:15px;height:15px}
+body[data-skin="d"] .brand .bt{font-size:13px;letter-spacing:.3px}
+body[data-skin="d"] .brand .bs{font-size:10px}
+body[data-skin="d"] .nav-group{font-size:9.5px;letter-spacing:1.2px;text-transform:uppercase;font-weight:700}
+body[data-skin="d"] .row{height:32px;font-size:12px;gap:8px}
+body[data-skin="d"] .row .cnt{font-family:ui-monospace,Consolas,monospace;font-size:10px;background:var(--surface-2);
+  border:1px solid var(--border);border-radius:10px;padding:0 6px;min-width:20px;text-align:center}
+body[data-skin="d"] .row.active .cnt{color:var(--brand);background:rgba(88,166,255,.15);border-color:rgba(88,166,255,.35)}
+body[data-skin="d"] .row.active::before{left:0;margin-left:-8px;height:16px;top:50%;transform:translateY(-50%);bottom:auto}
+body[data-skin="d"] .dot-live{box-shadow:0 0 6px rgba(63,185,80,.8);animation:dBreath 2.4s infinite}
+@keyframes dBreath{0%{opacity:1}50%{opacity:.4}100%{opacity:1}}
+body[data-skin="d"] .side-foot{font-size:10.5px}
+body[data-skin="d"] .side-foot span{font-family:ui-monospace,Consolas,monospace}
+body[data-skin="d"] .content{padding:14px 16px 30px}
+body[data-skin="d"] .page-head h2{font-size:15px;font-family:ui-monospace,Consolas,monospace}
+body[data-skin="d"] .page-sub{font-size:11.5px}
+body[data-skin="d"] .stats{gap:8px;margin-bottom:12px}
+body[data-skin="d"] .stat{padding:9px 13px;display:flex;align-items:center;gap:10px}
+body[data-skin="d"] .stat::after{display:none}
+body[data-skin="d"] .stat .led{display:inline-block;width:8px;height:8px}
+body[data-skin="d"] .led.ok{box-shadow:0 0 6px rgba(63,185,80,.8)}
+body[data-skin="d"] .led.warn{box-shadow:0 0 6px rgba(210,153,34,.8)}
+body[data-skin="d"] .led.fail{box-shadow:0 0 6px rgba(248,81,73,.8)}
+body[data-skin="d"] .stat .sl{font-size:10.5px;letter-spacing:.3px;font-weight:600}
+body[data-skin="d"] .stat .sv{font-size:19px;font-family:ui-monospace,Consolas,monospace;line-height:1.1;margin-top:0}
+body[data-skin="d"] .stat .ss{font-size:10px}
+body[data-skin="d"] .card{box-shadow:none;margin-bottom:12px}
+body[data-skin="d"] .card-head{padding:8px 12px;gap:8px}
+body[data-skin="d"] .card-head .t{font-size:12.5px}
+body[data-skin="d"] .card-head .s{font-size:11px}
+body[data-skin="d"] .btn{height:26px;font-size:11.5px;border-radius:6px}
+body[data-skin="d"] .btn.primary{background:var(--btn);box-shadow:none}
+body[data-skin="d"] .btn.primary:hover{background:#2a7fef;filter:none}
+body[data-skin="d"] .btn.ghost{background:var(--surface)}
+body[data-skin="d"] .btn.ghost:hover{border-color:var(--brand);color:var(--brand);background:var(--surface)}
+body[data-skin="d"] .btn.sm{height:24px;font-size:11px}
+body[data-skin="d"] .op-btn{height:23px;font-size:11px;border-radius:5px;border:1px solid var(--border);padding:0 6px}
+body[data-skin="d"] .op-btn:hover{color:var(--brand);border-color:var(--brand);background:var(--brand-soft)}
+body[data-skin="d"] .op-btn.kp{color:var(--brand);border-color:rgba(88,166,255,.35);background:transparent}
+body[data-skin="d"] .op-btn.kp:hover{background:var(--brand-soft)}
+body[data-skin="d"] .op-btn.dis{border-color:var(--border-soft)}
+body[data-skin="d"] .op-btn.dis:hover{border-color:var(--border-soft);background:transparent}
+body[data-skin="d"] .input{height:26px;font-size:11.5px;border-radius:6px;background:var(--bg)}
+body[data-skin="d"] .input.wide{font-family:ui-monospace,Consolas,monospace}
+body[data-skin="d"] .input:focus{box-shadow:none}
+body[data-skin="d"] .tbl th{padding:6px 8px;font-size:10px;letter-spacing:.6px;text-transform:uppercase;background:var(--surface-2)}
+body[data-skin="d"] .tbl td{padding:6px 6px;height:36px}
+body[data-skin="d"] .tbl tbody tr:hover{background:var(--hover)}
+body[data-skin="d"] .cell-main{font-size:12px}
+body[data-skin="d"] .cell-sub{font-size:10px;font-family:ui-monospace,Consolas,monospace}
+body[data-skin="d"] .tbl td.num{font-family:ui-monospace,Consolas,monospace;font-size:10.5px}
+body[data-skin="d"] .badge{padding:0;border-radius:0;background:transparent!important;font-size:11.5px;font-weight:600}
+body[data-skin="d"] .badge::before{width:7px;height:7px;box-shadow:0 0 5px currentColor}
+body[data-skin="d"] .tag{border-radius:4px;font-size:9.5px;font-weight:700;line-height:1.8;letter-spacing:.4px;
+  font-family:ui-monospace,Consolas,monospace;text-transform:uppercase;padding:0 6px}
+body[data-skin="d"] .tag-root{background:rgba(210,153,34,.15);color:var(--gold);border:1px solid rgba(210,153,34,.4)}
+body[data-skin="d"] .tag-kind{background:rgba(88,166,255,.12);color:var(--brand);border:1px solid rgba(88,166,255,.3)}
+body[data-skin="d"] .tag-kind.violet{background:rgba(188,140,255,.12);color:#bc8cff;border:1px solid rgba(188,140,255,.3)}
+body[data-skin="d"] .tag-net{background:rgba(63,185,80,.12);color:var(--success);border:1px solid rgba(63,185,80,.35)}
+body[data-skin="d"] .pill-cnt{background:var(--surface-2);border:1px solid var(--border);color:var(--text);font-family:ui-monospace,Consolas,monospace;border-radius:10px;font-size:10.5px}
+body[data-skin="d"] .mcell{display:flex;gap:7px}
+body[data-skin="d"] .mcell .mp{font-family:ui-monospace,Consolas,monospace;font-size:12px}
+body[data-skin="d"] .mcell .ms{font-family:ui-monospace,Consolas,monospace;font-size:9.5px}
+body[data-skin="d"] .st-row{gap:4px;font-size:11px}
+body[data-skin="d"] .st-path{width:36px;font-family:ui-monospace,Consolas,monospace;font-size:10px}
+body[data-skin="d"] .st-num{width:28px;font-family:ui-monospace,Consolas,monospace}
+body[data-skin="d"] .st-sub{font-size:9.5px;margin:1px 0 3px 40px;font-family:ui-monospace,Consolas,monospace}
+body[data-skin="d"] .bar{height:4px;border-radius:2px}
+body[data-skin="d"] .bar i{background:var(--success)}
+body[data-skin="d"] .switch{width:34px;height:18px;background:var(--barbg);border:1px solid var(--border)}
+body[data-skin="d"] .switch::after{width:12px;height:12px;background:var(--dim)}
+body[data-skin="d"] .switch.on{background:rgba(63,185,80,.25);border-color:var(--success)}
+body[data-skin="d"] .switch.on::after{left:18px;background:var(--success)}
+body[data-skin="d"] .cb{width:13px;height:13px;accent-color:#1f6feb}
+body[data-skin="d"] .caret{width:22px;height:22px;border-radius:5px;background:transparent}
+body[data-skin="d"] .batchbar{background:var(--brand-soft);border:1px solid rgba(88,166,255,.4);border-radius:7px;padding:6px 12px}
+body[data-skin="d"] .batchbar .btag{color:var(--brand);font-family:ui-monospace,Consolas,monospace;font-size:11.5px}
+body[data-skin="d"] tr.expand-tr td{background:var(--surface-2)}
+body[data-skin="d"] .expand-panel{border-left:2px solid var(--brand);padding:10px 14px 12px 12px}
+body[data-skin="d"] .ep-head .t{font-size:12px}
+body[data-skin="d"] .ep-head .s{font-size:11px}
+body[data-skin="d"] .sub-tbl{border-radius:6px}
+body[data-skin="d"] .sub-tbl .tbl td{padding:5px 10px;font-size:11.5px;height:30px}
+body[data-skin="d"] .sub-tbl .tbl th{padding:5px 10px}
+body[data-skin="d"] .pathbar{padding:9px 12px}
+body[data-skin="d"] .pathbar .input.path{font-family:ui-monospace,Consolas,monospace}
+body[data-skin="d"] .breadcrumb{font-family:ui-monospace,Consolas,monospace;font-size:11px;padding:0 12px 8px}
+body[data-skin="d"] .file-name{gap:8px}
+body[data-skin="d"] .file-name .ic.folder{color:var(--warn)}
+body[data-skin="d"] .file-name .ic.file{color:var(--dim)}
+body[data-skin="d"] .file-name .ic.link{color:var(--success)}
+body[data-skin="d"] .perm{font-size:11px}
+body[data-skin="d"] .strip{padding:7px 12px;background:var(--surface-2);font-size:11.5px}
+body[data-skin="d"] .tbl-foot{padding:6px 12px;font-size:10.5px;font-family:ui-monospace,Consolas,monospace}
+body[data-skin="d"] .settings-grid{gap:12px}
+body[data-skin="d"] .form-row{padding:8px 12px}
+body[data-skin="d"] .form-row .fl .ft{font-size:12px}
+body[data-skin="d"] .form-row .input{width:100px;font-family:ui-monospace,Consolas,monospace}
+body[data-skin="d"] .check-item{padding:8px 12px;gap:10px}
+body[data-skin="d"] .ci-name{font-size:12px}
+body[data-skin="d"] .ci-msg{font-size:11px}
+body[data-skin="d"] .ci-fix{background:var(--bg);font-size:10.5px}
+body[data-skin="d"] .empty .es{font-family:ui-monospace,Consolas,monospace}
+body[data-skin="d"] #crumb-last{color:var(--brand)}
+body[data-skin="d"] .crumbs{font-size:12px}
+
+/* ===== 响应式 ===== */
+@media (max-width:1080px){
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .settings-grid{grid-template-columns:1fr}
+  .searchbox{width:170px}
+  .hide-md{display:none}
+}
+@media (max-width:760px){
+  .side{width:66px}
+  .side .bt,.side .bs,.side .nav-group,.side .row span,.side .row .cnt,.side .side-foot span{display:none}
+  .side .row{justify-content:center;padding:0}
+  .stats{grid-template-columns:1fr 1fr}
+  .pill,.tb-hint,.clock,.sb-label,.sb-hint{display:none!important}
+}
+</style>
+</head>
+<body data-skin="a">
+
+<!-- 图标 sprite（内联，离线可用） -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol id="i-logo" viewBox="0 0 24 24"><path d="M12 2l9 5v10l-9 5-9-5V7l9-5z"/><path d="M12 22V12"/><path d="M3 7l9 5 9-5"/></symbol>
+  <symbol id="i-device" viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></symbol>
+  <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5z"/><path d="M14 3v5h5"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7.5-.5l-2 2a5 5 0 0 0 7 7l1-1"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></symbol>
+  <symbol id="i-archive" viewBox="0 0 24 24"><path d="M3 4h18v4H3z"/><path d="M5 8v11a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.7" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-caret" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><path d="M4 17l6-5-6-5"/><path d="M12 19h8"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10l9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V10z"/><path d="M9 22V12h6v10"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.7-9h1.8a4.5 4.5 0 1 1 0 9z"/></symbol>
+  <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
+  <symbol id="i-chevrons" viewBox="0 0 24 24"><path d="M11 17l-5-5 5-5M18 17l-5-5 5-5"/></symbol>
+</svg>
+
+<div class="app">
+  <!-- ============ 侧栏 ============ -->
+  <aside class="side" id="side">
+    <div class="brand" data-only="abd">
+      <div class="logo"><svg class="ic"><use href="#i-logo"/></svg></div>
+      <div>
+        <div class="bt"><span data-only="ab">AFE 控制台</span><span data-only="d">AFE CONSOLE</span></div>
+        <div class="bs">Android 文件资源管理器</div>
+      </div>
+    </div>
+    <nav class="nav">
+      <div class="nav-group"><span data-only="abc">总览</span><span data-only="d">OVERVIEW</span></div>
+      <div class="row active" data-page="devices"><svg class="ic"><use href="#i-device"/></svg><span>设备资源</span><em class="cnt">5</em></div>
+      <div class="row" data-page="machines"><svg class="ic"><use href="#i-server"/></svg><span>远程机器</span><em class="cnt">3</em></div>
+      <div class="nav-group"><span data-only="abc">操作</span><span data-only="d">OPERATIONS</span></div>
+      <div class="row" data-page="files"><svg class="ic"><use href="#i-folder"/></svg><span>文件浏览</span></div>
+      <div class="nav-group"><span data-only="abc">系统</span><span data-only="d">SYSTEM</span></div>
+      <div class="row" data-page="settings"><svg class="ic"><use href="#i-sliders"/></svg><span>设置</span></div>
+    </nav>
+    <div class="side-foot">
+      <span class="dot-live"></span><span>后端服务健康 · :8010</span>
+    </div>
+  </aside>
+
+  <!-- ============ 主区 ============ -->
+  <div class="main">
+    <header class="topbar">
+      <div class="tb-brand" data-only="c"><span class="tb-logo"><svg class="ic"><use href="#i-logo"/></svg></span>AFE 工作台</div>
+      <div class="crumbs">
+        <span class="c-home">Android 文件资源管理器</span>
+        <span class="crumb-sep">/</span>
+        <span id="crumb-last">设备资源</span>
+      </div>
+      <span class="sp"></span>
+      <span class="clock" data-only="d">采样 22:31:04 · 负载 1.52 / 1.31 / 1.10</span>
+      <span class="tb-hint" data-only="c">自动刷新 3s</span>
+      <div class="searchbox"><svg class="ic sm"><use href="#i-search"/></svg><input id="global-search" placeholder="全局搜索：名称 / 型号 / 序列号…"></div>
+      <span class="pill" data-only="ab"><span class="dot-live"></span>自动刷新 3s</span>
+      <span class="pill" data-only="d"><span class="dot-live"></span>REFRESH 3s</span>
+      <button class="btn ghost sm hide-md" id="side-toggle" title="收起侧栏" style="height:32px"><svg class="ic sm"><use href="#i-chevrons"/></svg></button>
+      <div class="avatar">C</div>
+    </header>
+
+    <div class="content">
+
+      <!-- ============ 页 1 · 设备资源 ============ -->
+      <section class="page active" id="page-devices">
+        <div class="page-head">
+          <div>
+            <h2>设备资源管理</h2>
+            <div class="page-sub">每 3 秒刷新一次运行状态</div>
+          </div>
+          <span class="sp"></span>
+          <button class="btn ghost"><svg class="ic sm"><use href="#i-refresh"/></svg>同步</button>
+        </div>
+
+        <div class="stats">
+          <div class="stat c-brand"><span class="led ok" data-only="d"></span><div><div class="sl">设备总数</div><div class="sv num">5</div><div class="ss">跨 3 台机器自动发现</div></div></div>
+          <div class="stat c-ok"><span class="led ok" data-only="d"></span><div><div class="sl">在线</div><div class="sv num">2</div><div class="ss">指标采样正常</div></div></div>
+          <div class="stat c-warn"><span class="led warn" data-only="d"></span><div><div class="sl">已 root</div><div class="sv num">1</div><div class="ss">Pixel 6 测试机</div></div></div>
+          <div class="stat c-bad"><span class="led fail" data-only="d"></span><div><div class="sl">异常 · 未授权</div><div class="sv num">2</div><div class="ss">需要人工介入</div></div></div>
+        </div>
+
+        <div class="batchbar" id="batchbar">
+          <span class="btag">已选 <span id="sel-n">0</span> 台</span>
+          <button class="btn ghost sm"><svg class="ic sm"><use href="#i-terminal"/></svg>批量尝试 root</button>
+          <button class="btn ghost sm">批量取消 root</button>
+          <span class="sp" style="flex:1"></span>
+          <button class="btn ghost sm" id="clear-sel">取消选择</button>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <svg class="ic" style="color:var(--brand)"><use href="#i-device"/></svg>
+            <span class="t">设备列表</span>
+            <span class="s">点击「设备 / 最后在线」列头可排序</span>
+            <span class="sp"></span>
+            <input class="input wide" id="dev-filter" placeholder="按名称 / 型号 / 序列号 / UID 过滤">
+          </div>
+          <table class="tbl" id="dev-tbl">
+            <thead>
+              <tr>
+                <th style="width:36px"><input type="checkbox" class="cb" id="cb-all"></th>
+                <th class="sortable" data-key="name">设备<span class="arr">⇅</span></th>
+                <th>唯一标识 UID</th>
+                <th>状态</th>
+                <th>系统</th>
+                <th>CPU</th>
+                <th>内存</th>
+                <th>存储</th>
+                <th class="sortable" data-key="seen">最后在线<span class="arr">⇅</span></th>
+                <th style="width:132px">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><input type="checkbox" class="cb dev-cb"></td>
+                <td data-key="name" data-v="0"><div class="cell-main">Pixel 6 测试机 <span class="tag tag-root">root</span></div><div class="cell-sub mono">emulator-5554</div></td>
+                <td class="mono" style="font-size:10.5px">3f2a9c1e8b7d4a60</td>
+                <td><span class="badge ok">在线</span></td>
+                <td><div class="cell-main">Android 14 (API 34)</div><div class="cell-sub">gs101 · arm64-v8a</div></td>
+                <td>
+                  <div class="ring-cell" data-only="ab"><svg class="ring" viewBox="0 0 30 30"><circle class="bg" cx="15" cy="15" r="11"/><circle class="fg" cx="15" cy="15" r="11" style="stroke:var(--success);stroke-dasharray:16.2 52.9"/><text x="15" y="18.5" transform="rotate(90 15 15)">23%</text></svg></div>
+                  <div class="mcell" data-only="cd"><span class="mp ok">23.4%</span><span class="ms">8 核 1.80G</span></div>
+                </td>
+                <td>
+                  <div class="ring-cell" data-only="ab"><svg class="ring" viewBox="0 0 30 30"><circle class="bg" cx="15" cy="15" r="11"/><circle class="fg" cx="15" cy="15" r="11" style="stroke:var(--success);stroke-dasharray:40.2 28.9"/><text x="15" y="18.5" transform="rotate(90 15 15)">58%</text></svg></div>
+                  <div class="mcell" data-only="cd"><span class="mp ok">58.2%</span><span class="ms">4.7/8.0G</span></div>
+                </td>
+                <td>
+                  <div class="st-row"><span class="st-path">/data</span><span class="bar warn"><i style="width:60%"></i></span><span class="st-num">60.0%</span></div>
+                  <div class="st-sub">12.0 / 20.0 GB</div>
+                  <div class="st-row"><span class="st-path">/sdcard</span><span class="bar"><i style="width:34.2%"></i></span><span class="st-num">34.2%</span></div>
+                  <div class="st-sub">6.8 / 20.0 GB</div>
+                </td>
+                <td class="num" data-key="seen" data-v="20261116223104">2026-11-16 22:31:04</td>
+                <td>
+                  <button class="op-btn kp"><svg class="ic sm"><use href="#i-folder"/></svg>浏览文件</button>
+                  <button class="op-btn"><svg class="ic sm"><use href="#i-more"/></svg></button>
+                </td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" class="cb dev-cb"></td>
+                <td data-key="name" data-v="1"><div class="cell-main">小米 14 开发机</div><div class="cell-sub mono">23127PN0CC · xiaomi</div></td>
+                <td class="mono" style="font-size:10.5px">8c1f4e2a9b0d7e35</td>
+                <td><span class="badge ok">在线</span></td>
+                <td><div class="cell-main">Android 13 (API 33)</div><div class="cell-sub">8 Gen 3 · arm64-v8a</div></td>
+                <td>
+                  <div class="ring-cell" data-only="ab"><svg class="ring" viewBox="0 0 30 30"><circle class="bg" cx="15" cy="15" r="11"/><circle class="fg" cx="15" cy="15" r="11" style="stroke:var(--success);stroke-dasharray:5.4 63.7"/><text x="15" y="18.5" transform="rotate(90 15 15)">8%</text></svg></div>
+                  <div class="mcell" data-only="cd"><span class="mp ok">7.8%</span><span class="ms">8 核 2.10G</span></div>
+                </td>
+                <td>
+                  <div class="ring-cell" data-only="ab"><svg class="ring" viewBox="0 0 30 30"><circle class="bg" cx="15" cy="15" r="11"/><circle class="fg" cx="15" cy="15" r="11" style="stroke:var(--success);stroke-dasharray:28.7 40.4"/><text x="15" y="18.5" transform="rotate(90 15 15)">42%</text></svg></div>
+                  <div class="mcell" data-only="cd"><span class="mp ok">41.5%</span><span class="ms">5.0/12.0G</span></div>
+                </td>
+                <td>
+                  <div class="st-row"><span class="st-path">/data</span><span class="bar warn"><i style="width:45.1%"></i></span><span class="st-num">45.1%</span></div>
+                  <div class="st-sub">108 / 240 GB</div>
+                  <div class="st-row"><span class="st-path">/sdcard</span><span class="bar warn"><i style="width:61.8%"></i></span><span class="st-num">61.8%</span></div>
+                  <div class="st-sub">148 / 240 GB</div>
+                </td>
+                <td class="num" data-key="seen" data-v="20261116223103">2026-11-16 22:31:03</td>
+                <td>
+                  <button class="op-btn kp"><svg class="ic sm"><use href="#i-folder"/></svg>浏览文件</button>
+                  <button class="op-btn"><svg class="ic sm"><use href="#i-more"/></svg></button>
+                </td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" class="cb dev-cb"></td>
+                <td data-key="name" data-v="2"><div class="cell-main">办公室测试机</div><div class="cell-sub mono">R58N1234XYZ · google</div></td>
+                <td class="mono" style="font-size:10.5px">b7d2e6f0a3c89d14</td>
+                <td><span class="badge off">离线</span></td>
+                <td><div class="cell-main">Android 14 (API 34)</div><div class="cell-sub">gs201 · arm64-v8a</div></td>
+                <td><span class="badge off" data-only="ab">离线</span><span class="cell-sub" data-only="cd">离线</span></td>
+                <td><span class="badge off" data-only="ab">离线</span><span class="cell-sub" data-only="cd">离线</span></td>
+                <td><span class="cell-sub">—</span></td>
+                <td class="num" data-key="seen" data-v="20261116184210">2026-11-16 18:42:10</td>
+                <td>
+                  <button class="op-btn kp dis"><svg class="ic sm"><use href="#i-folder"/></svg>浏览文件</button>
+                  <button class="op-btn"><svg class="ic sm"><use href="#i-more"/></svg></button>
+                </td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" class="cb dev-cb"></td>
+                <td data-key="name" data-v="3"><div class="cell-main">网络测试机 <span class="tag tag-net">网络</span></div><div class="cell-sub mono">192.168.1.100:5555</div></td>
+                <td class="mono" style="font-size:10.5px">5e9a1c7b2f6d48e0</td>
+                <td><span class="badge warn">未授权</span></td>
+                <td><div class="cell-main">Android 12 (API 31)</div><div class="cell-sub">sdm660 · arm64-v8a</div></td>
+                <td><span class="badge info" data-only="ab">采样中…</span><span class="cell-sub" data-only="cd">采样中…</span></td>
+                <td><span class="badge info" data-only="ab">采样中…</span><span class="cell-sub" data-only="cd">采样中…</span></td>
+                <td><span class="cell-sub">—</span></td>
+                <td class="num" data-key="seen" data-v="20261116223011">2026-11-16 22:30:11</td>
+                <td>
+                  <button class="op-btn kp dis"><svg class="ic sm"><use href="#i-folder"/></svg>浏览文件</button>
+                  <button class="op-btn"><svg class="ic sm"><use href="#i-more"/></svg></button>
+                </td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" class="cb dev-cb"></td>
+                <td data-key="name" data-v="4"><div class="cell-main">一加 8 Pro 刷机机</div><div class="cell-sub mono">8P123456 · oneplus</div></td>
+                <td class="mono" style="font-size:10.5px">c4f8b2d6e1a05739</td>
+                <td><span class="badge fail" title="adb: device unauthorized">异常</span></td>
+                <td><div class="cell-main">Android 11 (API 30)</div><div class="cell-sub">kona · arm64-v8a</div></td>
+                <td><span class="cell-sub">权限不足</span></td>
+                <td><span class="cell-sub">权限不足</span></td>
+                <td><span class="cell-sub">—</span></td>
+                <td class="num" data-key="seen" data-v="20261116201547">2026-11-16 20:15:47</td>
+                <td>
+                  <button class="op-btn kp dis"><svg class="ic sm"><use href="#i-folder"/></svg>浏览文件</button>
+                  <button class="op-btn"><svg class="ic sm"><use href="#i-more"/></svg></button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="tbl-foot"><span>第 1-5 台 · 共 5 台</span><span class="sp"></span><span>指标每 3s 采样 · 上限 200 条/页</span></div>
+        </div>
+      </section>
+
+      <!-- ============ 页 2 · 远程机器 ============ -->
+      <section class="page" id="page-machines">
+        <div class="hero" data-only="ab">
+          <div class="hero-icon"><svg class="ic"><use href="#i-cloud"/></svg></div>
+          <div>
+            <h2>远程机器连接配置</h2>
+            <div class="hs">登记本机与远程 agent / SSH 机器；点行首 + 展开查看并设置设备</div>
+          </div>
+          <span class="sp"></span>
+          <div class="hero-stat"><div class="hv num">3</div><div class="hl">机器</div></div>
+          <div class="hero-stat"><div class="hv num ok">2</div><div class="hl">已连接</div></div>
+          <div class="hero-stat"><div class="hv num warn">1</div><div class="hl">未连接</div></div>
+          <button class="btn primary"><svg class="ic sm"><use href="#i-plus"/></svg>新增机器</button>
+        </div>
+
+        <div class="page-head" data-only="cd">
+          <div>
+            <h2>远程机器连接配置</h2>
+            <div class="page-sub">登记本机与远程 agent / SSH 机器；点行首 + 展开查看并设置设备</div>
+          </div>
+          <div class="mini-stats" data-only="c"><span>机器 <b>3</b></span><span>已连接 <b class="ok">2</b></span><span>未连接 <b class="warn">1</b></span></div>
+          <span class="sp"></span>
+          <button class="btn primary"><svg class="ic sm"><use href="#i-plus"/></svg>新增机器</button>
+        </div>
+
+        <div class="stats" data-only="d">
+          <div class="stat c-brand"><span class="led ok"></span><div><div class="sl">机器</div><div class="sv">3</div></div></div>
+          <div class="stat c-ok"><span class="led ok"></span><div><div class="sl">已连接</div><div class="sv">2</div></div></div>
+          <div class="stat c-bad"><span class="led fail"></span><div><div class="sl">未连接</div><div class="sv">1</div></div></div>
+          <div class="stat"><span class="led off"></span><div><div class="sl">设备总数</div><div class="sv">5</div></div></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <svg class="ic" style="color:var(--brand)"><use href="#i-server"/></svg>
+            <span class="t">机器列表</span>
+            <span class="s">agent 走 MDD 通道，SSH 直连无需部署</span>
+            <span class="sp"></span>
+            <button class="btn ghost sm"><svg class="ic sm"><use href="#i-refresh"/></svg>全部探测</button>
+          </div>
+          <table class="tbl" id="mach-tbl">
+            <thead>
+              <tr>
+                <th style="width:40px"></th>
+                <th>名称</th>
+                <th>地址</th>
+                <th>状态</th>
+                <th>设备数</th>
+                <th>最后探测</th>
+                <th style="width:184px">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><button class="caret open" data-expand="mx1"><svg class="ic"><use href="#i-caret"/></svg></button></td>
+                <td><div class="cell-main">本机 adb</div><div class="cell-sub">本机 adb server</div></td>
+                <td class="mono" style="font-size:10.5px">127.0.0.1:5037</td>
+                <td><span class="badge ok">已连接</span></td>
+                <td><span class="pill-cnt">4</span></td>
+                <td class="num">2026-11-16 22:31:04</td>
+                <td>
+                  <button class="op-btn">编辑</button>
+                  <button class="op-btn kp">测试连接</button>
+                  <button class="op-btn"><svg class="ic sm"><use href="#i-more"/></svg></button>
+                </td>
+              </tr>
+              <tr class="expand-tr" id="mx1">
+                <td colspan="7">
+                  <div class="expand-panel">
+                    <div class="ep-head">
+                      <span class="t">该机器上的设备</span>
+                      <span class="s">名称、root 与连接状态可直接在这里调整</span>
+                      <span class="pill-cnt">4 台</span>
+                      <span class="sp"></span>
+                      <button class="btn ghost sm"><svg class="ic sm"><use href="#i-link"/></svg>连接新设备</button>
+                      <button class="btn ghost sm"><svg class="ic sm"><use href="#i-refresh"/></svg>刷新</button>
+                    </div>
+                    <div class="sub-tbl">
+                      <table class="tbl">
+                        <thead><tr><th>设备</th><th>状态</th><th>系统</th><th>最后在线</th><th style="width:166px">操作</th></tr></thead>
+                        <tbody>
+                          <tr>
+                            <td><div class="cell-main">Pixel 6 测试机 <span class="tag tag-root">root</span></div><div class="cell-sub mono">emulator-5554 · google</div></td>
+                            <td><span class="badge ok">在线</span></td>
+                            <td>Android 14 (API 34)</td>
+                            <td class="num">2026-11-16 22:31:04</td>
+                            <td><button class="op-btn kp"><svg class="ic sm"><use href="#i-folder"/></svg>浏览文件</button><button class="op-btn">修改名称</button></td>
+                          </tr>
+                          <tr>
+                            <td><div class="cell-main">小米 14 开发机</div><div class="cell-sub mono">23127PN0CC · xiaomi</div></td>
+                            <td><span class="badge ok">在线</span></td>
+                            <td>Android 13 (API 33)</td>
+                            <td class="num">2026-11-16 22:31:03</td>
+                            <td><button class="op-btn kp"><svg class="ic sm"><use href="#i-folder"/></svg>浏览文件</button><button class="op-btn">修改名称</button></td>
+                          </tr>
+                          <tr>
+                            <td><div class="cell-main">办公室测试机</div><div class="cell-sub mono">R58N1234XYZ · google</div></td>
+                            <td><span class="badge off">离线</span></td>
+                            <td>Android 14 (API 34)</td>
+                            <td class="num">2026-11-16 18:42:10</td>
+                            <td><button class="op-btn kp dis"><svg class="ic sm"><use href="#i-folder"/></svg>浏览文件</button><button class="op-btn">修改名称</button></td>
+                          </tr>
+                          <tr>
+                            <td><div class="cell-main">一加 8 Pro 刷机机</div><div class="cell-sub mono">8P123456 · oneplus</div></td>
+                            <td><span class="badge fail" title="adb: device unauthorized">异常</span></td>
+                            <td>Android 11 (API 30)</td>
+                            <td class="num">2026-11-16 20:15:47</td>
+                            <td><button class="op-btn kp dis"><svg class="ic sm"><use href="#i-folder"/></svg>浏览文件</button><button class="op-btn">修改名称</button></td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><button class="caret" data-expand="mx2"><svg class="ic"><use href="#i-caret"/></svg></button></td>
+                <td><div class="cell-main">虚拟机 <span class="tag tag-kind">agent</span></div><div class="cell-sub">MDD agent 通道</div></td>
+                <td class="mono" style="font-size:10.5px">192.168.114.130:12345</td>
+                <td><span class="badge ok">已连接</span></td>
+                <td><span class="pill-cnt">1</span></td>
+                <td class="num">2026-11-16 22:31:02</td>
+                <td>
+                  <button class="op-btn">编辑</button>
+                  <button class="op-btn kp">测试连接</button>
+                  <button class="op-btn"><svg class="ic sm"><use href="#i-more"/></svg></button>
+                </td>
+              </tr>
+              <tr class="expand-tr" id="mx2" hidden>
+                <td colspan="7"><div class="expand-panel">
+                  <div class="ep-head"><span class="t">该机器上的设备</span><span class="pill-cnt">1 台</span><span class="sp"></span><button class="btn ghost sm"><svg class="ic sm"><use href="#i-link"/></svg>连接新设备</button></div>
+                  <div class="sub-tbl"><table class="tbl">
+                    <thead><tr><th>设备</th><th>状态</th><th>系统</th><th>最后在线</th><th style="width:166px">操作</th></tr></thead>
+                    <tbody><tr>
+                      <td><div class="cell-main">网络测试机 <span class="tag tag-net">网络</span></div><div class="cell-sub mono">192.168.1.100:5555</div></td>
+                      <td><span class="badge warn">未授权</span></td><td>Android 12 (API 31)</td><td class="num">2026-11-16 22:30:11</td>
+                      <td><button class="op-btn"><svg class="ic sm"><use href="#i-link"/></svg>连接</button><button class="op-btn">修改名称</button></td>
+                    </tr></tbody>
+                  </table></div>
+                </div></td>
+              </tr>
+              <tr>
+                <td><button class="caret" data-expand="mx3"><svg class="ic"><use href="#i-caret"/></svg></button></td>
+                <td><div class="cell-main">测试服务器 <span class="tag tag-kind violet">SSH 直连</span></div><div class="cell-sub">SSH 直连（零部署）· 已保存 SSH 密码</div></td>
+                <td class="mono" style="font-size:10.5px">192.168.114.140:22</td>
+                <td><span class="badge fail" title="SSH 连接失败：Connection refused (port 22)">异常 ⚠</span></td>
+                <td><span class="pill-cnt">0</span></td>
+                <td class="num">2026-11-16 21:58:40</td>
+                <td>
+                  <button class="op-btn">编辑</button>
+                  <button class="op-btn kp">测试连接</button>
+                  <button class="op-btn" style="color:var(--danger)">删除机器</button>
+                </td>
+              </tr>
+              <tr class="expand-tr" id="mx3" hidden>
+                <td colspan="7"><div class="expand-panel">
+                  <div class="empty" style="padding:26px">
+                    <svg class="ic"><use href="#i-alert"/></svg>
+                    <div class="et">该机器暂未发现设备</div>
+                    <div class="es">SSH 连接失败：Connection refused (port 22) — 可点「测试连接」后重试</div>
+                  </div>
+                </div></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ 页 3 · 文件浏览 ============ -->
+      <section class="page" id="page-files">
+        <div class="card">
+          <div class="card-head">
+            <button class="btn ghost sm">← 切换设备</button>
+            <button class="btn ghost sm">设备列表</button>
+            <span style="width:1px;height:22px;background:var(--border)"></span>
+            <span class="t">文件浏览</span>
+            <span class="s mono">Pixel 6 测试机 · emulator-5554</span>
+            <span class="badge ok">在线</span>
+            <span class="sp"></span>
+            <button class="btn ghost sm"><svg class="ic sm"><use href="#i-terminal"/></svg>取消 root</button>
+            <select class="input" style="height:27px;font-size:12px"><option>当前目录</option><option>全设备</option></select>
+            <input class="input" style="height:27px;font-size:12px;width:130px" placeholder="搜索文件名">
+            <button class="btn ghost sm"><svg class="ic sm"><use href="#i-archive"/></svg>打包目录</button>
+            <button class="btn primary sm"><svg class="ic sm"><use href="#i-upload"/></svg>上传到当前目录</button>
+            <button class="btn ghost sm"><svg class="ic sm"><use href="#i-plus"/></svg>新建目录</button>
+          </div>
+          <div class="strip">
+            <svg class="ic sm" style="color:var(--brand)"><use href="#i-upload"/></svg>
+            <span class="st-label">上传 2/3：<b>app-release-signed.apk</b></span>
+            <span class="bar"><i style="width:64%"></i></span>
+            <span class="num">64% · 9.1 / 14.2 MB</span>
+            <span class="sp"></span>
+            <button class="op-btn" style="color:var(--danger)">取消</button>
+          </div>
+          <div class="pathbar">
+            <svg class="ic sm" style="color:var(--dim)"><use href="#i-folder"/></svg>
+            <input class="input path" value="/data/local/tmp" placeholder="直接输入路径，例如 /data/local/tmp">
+            <button class="btn primary sm">跳转</button>
+            <button class="btn ghost sm"><svg class="ic sm"><use href="#i-home"/></svg>根目录</button>
+            <button class="btn ghost sm"><svg class="ic sm"><use href="#i-refresh"/></svg></button>
+          </div>
+          <div class="breadcrumb">
+            <a>根目录</a><span class="crumb-sep">/</span><a>data</a><span class="crumb-sep">/</span><a>local</a><span class="crumb-sep">/</span><span class="cur">tmp</span>
+            <span class="sp" style="flex:1"></span><span>共 6 项</span>
+          </div>
+          <table class="tbl" id="file-tbl">
+            <thead>
+              <tr>
+                <th>名称</th>
+                <th>权限</th>
+                <th>所属</th>
+                <th>修改时间</th>
+                <th style="text-align:right">大小</th>
+                <th style="width:210px">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><div class="file-name"><svg class="ic folder"><use href="#i-folder"/></svg><span class="cell-main">logs</span></div></td>
+                <td class="perm">drwxrwx--x</td><td class="mono">root:shell</td>
+                <td class="num">2026-11-16 21:40</td><td class="num" style="text-align:right">—</td>
+                <td><button class="op-btn kp"><svg class="ic sm"><use href="#i-download"/></svg>下载</button><button class="op-btn"><svg class="ic sm"><use href="#i-more"/></svg></button></td>
+              </tr>
+              <tr>
+                <td><div class="file-name"><svg class="ic folder"><use href="#i-folder"/></svg><span class="cell-main">screenshots</span></div></td>
+                <td class="perm">drwxr-xr-x</td><td class="mono">shell:shell</td>
+                <td class="num">2026-11-15 18:02</td><td class="num" style="text-align:right">—</td>
+                <td><button class="op-btn kp"><svg class="ic sm"><use href="#i-download"/></svg>下载</button><button class="op-btn"><svg class="ic sm"><use href="#i-more"/></svg></button></td>
+              </tr>
+              <tr>
+                <td><div class="file-name"><svg class="ic file"><use href="#i-file"/></svg><span class="cell-main">app-debug.apk</span></div></td>
+                <td class="perm">-rw-rw-rw-</td><td class="mono">shell:shell</td>
+                <td class="num">2026-11-16 20:12</td><td class="num" style="text-align:right">14.2 MB</td>
+                <td><button class="op-btn kp"><svg class="ic sm"><use href="#i-download"/></svg>下载</button><button class="op-btn">重命名</button><button class="op-btn"><svg class="ic sm"><use href="#i-more"/></svg></button><button class="op-btn" style="color:var(--danger)"><svg class="ic sm"><use href="#i-trash"/></svg></button></td>
+              </tr>
+              <tr>
+                <td><div class="file-name"><svg class="ic file"><use href="#i-file"/></svg><span class="cell-main">config.json</span></div></td>
+                <td class="perm">-rw-r--r--</td><td class="mono">shell:shell</td>
+                <td class="num">2026-11-16 09:31</td><td class="num" style="text-align:right">2.3 KB</td>
+                <td><button class="op-btn kp"><svg class="ic sm"><use href="#i-download"/></svg>下载</button><button class="op-btn"><svg class="ic sm"><use href="#i-eye"/></svg>预览</button><button class="op-btn"><svg class="ic sm"><use href="#i-more"/></svg></button></td>
+              </tr>
+              <tr>
+                <td><div class="file-name"><svg class="ic link"><use href="#i-link"/></svg><span class="cell-main">busybox <span class="tag tag-net">链接</span></span><span class="cell-sub" style="margin:0">→ /system/xbin/busybox</span></div></td>
+                <td class="perm">lrwxrwxrwx</td><td class="mono">root:root</td>
+                <td class="num">2026-10-02 11:20</td><td class="num" style="text-align:right">—</td>
+                <td><button class="op-btn kp"><svg class="ic sm"><use href="#i-download"/></svg>下载</button><button class="op-btn"><svg class="ic sm"><use href="#i-more"/></svg></button></td>
+              </tr>
+              <tr>
+                <td><div class="file-name"><svg class="ic file"><use href="#i-file"/></svg><span class="cell-main">trace_20261116.log</span></div></td>
+                <td class="perm">-rw-r--r--</td><td class="mono">root:shell</td>
+                <td class="num">2026-11-16 22:28</td><td class="num" style="text-align:right">856 KB</td>
+                <td><button class="op-btn kp"><svg class="ic sm"><use href="#i-download"/></svg>下载</button><button class="op-btn"><svg class="ic sm"><use href="#i-more"/></svg></button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ 页 4 · 设置 ============ -->
+      <section class="page" id="page-settings">
+        <div class="page-head">
+          <div>
+            <h2>平台设置</h2>
+            <div class="page-sub">保存后立即生效，无需重启后端</div>
+          </div>
+        </div>
+        <div class="settings-grid">
+          <div class="card" style="margin-bottom:0">
+            <div class="card-head">
+              <svg class="ic" style="color:var(--brand)"><use href="#i-sliders"/></svg>
+              <span class="t">平台设置</span>
+            </div>
+            <div class="form-row">
+              <div class="fl"><div class="ft">设备列表刷新间隔（秒）</div><div class="fh">1 – 60 秒</div></div>
+              <input class="input" id="set-refresh" value="3">
+              <span class="sp" style="flex:1"></span>
+            </div>
+            <div class="form-row">
+              <div class="fl"><div class="ft">自动同步间隔（秒）</div><div class="fh">0 表示关闭</div></div>
+              <input class="input" id="set-sync" value="0">
+              <span class="sp" style="flex:1"></span>
+            </div>
+            <div class="form-row">
+              <div class="fl"><div class="ft">自动尝试 root</div><div class="fh">设备上线时自动执行 adb root</div></div>
+              <button class="switch" data-switch id="set-autoroot"></button>
+              <span class="sp" style="flex:1"></span>
+            </div>
+            <div class="tbl-foot"><span class="sp"></span><button class="btn primary">保存设置</button></div>
+          </div>
+          <div class="card" style="margin-bottom:0">
+            <div class="card-head">
+              <svg class="ic" style="color:var(--success)"><use href="#i-check"/></svg>
+              <span class="t">环境自检</span>
+              <span class="sp"></span>
+              <button class="btn ghost sm"><svg class="ic sm"><use href="#i-refresh"/></svg>重新检查</button>
+            </div>
+            <div class="check-item">
+              <svg class="ic" style="color:var(--success);margin-top:2px"><use href="#i-check"/></svg>
+              <div class="ci-main">
+                <div class="ci-name">Python 运行时 <span class="badge ok">正常</span></div>
+                <div class="ci-msg">Python 3.11.8 — 满足最低要求 3.10</div>
+              </div>
+            </div>
+            <div class="check-item">
+              <svg class="ic" style="color:var(--success);margin-top:2px"><use href="#i-check"/></svg>
+              <div class="ci-main">
+                <div class="ci-name">核心依赖 <span class="badge ok">正常</span></div>
+                <div class="ci-msg">fastapi · sqlmodel · uvicorn 版本满足要求</div>
+              </div>
+            </div>
+            <div class="check-item">
+              <svg class="ic" style="color:var(--warn);margin-top:2px"><use href="#i-alert"/></svg>
+              <div class="ci-main">
+                <div class="ci-name">asyncssh <span class="badge warn">警告</span><span class="opt">可选</span></div>
+                <div class="ci-msg">未安装 asyncssh，SSH 直连功能不可用</div>
+                <span class="ci-fix"><span>pip install asyncssh</span><svg class="ic sm"><use href="#i-copy"/></svg></span>
+              </div>
+            </div>
+            <div class="check-item">
+              <svg class="ic" style="color:var(--success);margin-top:2px"><use href="#i-check"/></svg>
+              <div class="ci-main">
+                <div class="ci-name">adb 工具 <span class="badge ok">正常</span></div>
+                <div class="ci-msg">platform-tools 35.0.0 — 已在 PATH 中</div>
+              </div>
+            </div>
+            <div class="check-item">
+              <svg class="ic" style="color:var(--success);margin-top:2px"><use href="#i-check"/></svg>
+              <div class="ci-main">
+                <div class="ci-name">数据目录 <span class="badge ok">正常</span></div>
+                <div class="ci-msg">./data 可读写（SQLite 数据库所在）</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<!-- 风格切换器 -->
+<div class="skinbar" id="skinbar">
+  <span class="sb-label">界面风格</span>
+  <button class="sk active" data-skin="a"><b>A</b>蔚蓝科技</button>
+  <button class="sk" data-skin="b"><b>B</b>夜色玻璃</button>
+  <button class="sk" data-skin="c"><b>C</b>极简工作台</button>
+  <button class="sk" data-skin="d"><b>D</b>运维控制台</button>
+  <span class="sb-hint">快捷键 1–4</span>
+</div>
+
+<script>
+// ---- 风格切换 ----
+const SKINS = ['a','b','c','d'];
+function applyVisibility(skin){
+  document.querySelectorAll('[data-only]').forEach(el=>{
+    el.style.display = el.getAttribute('data-only').includes(skin) ? '' : 'none';
+  });
+}
+function setSkin(skin, save){
+  if(!SKINS.includes(skin)) return;
+  document.body.dataset.skin = skin;
+  applyVisibility(skin);
+  document.querySelectorAll('.sk[data-skin]').forEach(b=>b.classList.toggle('active', b.dataset.skin===skin));
+  if(save !== false){ try{ localStorage.setItem('afe-skin', skin); }catch(e){} }
+}
+document.querySelectorAll('.sk[data-skin]').forEach(btn=>{
+  btn.addEventListener('click', ()=>setSkin(btn.dataset.skin));
+});
+window.addEventListener('keydown', e=>{
+  if(/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+  const i = ['1','2','3','4'].indexOf(e.key);
+  if(i >= 0) setSkin(SKINS[i]);
+});
+let savedSkin = 'a';
+try{ savedSkin = localStorage.getItem('afe-skin') || 'a'; }catch(e){}
+setSkin(savedSkin, false);
+
+// ---- 页内导航 ----
+const titles = { devices:'设备资源', machines:'远程机器', files:'文件浏览', settings:'设置' };
+document.querySelectorAll('.row[data-page]').forEach(el=>{
+  el.addEventListener('click',()=>{
+    document.querySelectorAll('.row[data-page]').forEach(r=>r.classList.remove('active'));
+    el.classList.add('active');
+    document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+    document.getElementById('page-'+el.dataset.page).classList.add('active');
+    document.getElementById('crumb-last').textContent = titles[el.dataset.page];
+    document.querySelector('.content').scrollTop = 0;
+  });
+});
+// ---- 侧栏折叠 ----
+document.getElementById('side-toggle').addEventListener('click',()=>{
+  document.getElementById('side').classList.toggle('collapsed');
+});
+// ---- 机器行展开 ----
+document.querySelectorAll('.caret[data-expand]').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const tr = document.getElementById(btn.dataset.expand);
+    tr.hidden = !tr.hidden;
+    btn.classList.toggle('open', !tr.hidden);
+  });
+});
+// ---- 开关 ----
+document.querySelectorAll('[data-switch]').forEach(sw=>{
+  sw.addEventListener('click',()=>sw.classList.toggle('on'));
+});
+// ---- 表格排序（设备表）----
+let sortKey=null, sortDir=1;
+document.querySelectorAll('#dev-tbl th.sortable').forEach(th=>{
+  th.addEventListener('click',()=>{
+    const key = th.dataset.key;
+    sortDir = (sortKey===key) ? -sortDir : 1;
+    sortKey = key;
+    const arr = th.querySelector('.arr'); arr.textContent = sortDir===1?'↓':'↑';
+    const tbody = document.querySelector('#dev-tbl tbody');
+    const rows = [...tbody.querySelectorAll('tr')];
+    rows.sort((a,b)=>{
+      const va=a.querySelector(`td[data-key="${key}"]`).dataset.v, vb=b.querySelector(`td[data-key="${key}"]`).dataset.v;
+      const na=parseFloat(va), nb=parseFloat(vb);
+      const r = (!isNaN(na)&&!isNaN(nb)) ? na-nb : String(va).localeCompare(String(vb));
+      return r*sortDir;
+    }).forEach(r=>tbody.appendChild(r));
+  });
+});
+// ---- 批量选择 ----
+const batchbar = document.getElementById('batchbar');
+function syncSel(){
+  const n = document.querySelectorAll('.dev-cb:checked').length;
+  document.getElementById('sel-n').textContent = n;
+  batchbar.classList.toggle('show', n>0);
+}
+document.querySelectorAll('.dev-cb').forEach(cb=>cb.addEventListener('change',syncSel));
+document.getElementById('cb-all').addEventListener('change',e=>{
+  document.querySelectorAll('.dev-cb').forEach(cb=>cb.checked=e.target.checked); syncSel();
+});
+document.getElementById('clear-sel').addEventListener('click',()=>{
+  document.querySelectorAll('.cb').forEach(cb=>cb.checked=false); syncSel();
+});
+// ---- 表格行内过滤（设备表）----
+document.getElementById('dev-filter').addEventListener('input',e=>{
+  const kw=e.target.value.trim().toLowerCase();
+  document.querySelectorAll('#dev-tbl tbody tr').forEach(tr=>{
+    tr.style.display = tr.textContent.toLowerCase().includes(kw) ? '' : 'none';
+  });
+});
+// ---- 全局搜索（当前可见页表格）----
+document.getElementById('global-search').addEventListener('input',e=>{
+  const kw=e.target.value.trim().toLowerCase();
+  document.querySelectorAll('.page.active .tbl tbody tr').forEach(tr=>{
+    tr.style.display = tr.textContent.toLowerCase().includes(kw) ? '' : 'none';
+  });
+});
+</script>
+</body>
+</html>

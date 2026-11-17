@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AFE 界面重构 · 方案对比</title>
+<!-- 对比入口：内嵌 4 个方案预览（缩放 iframe），点击卡片标题在新窗口打开 -->
+<style>
+:root{
+  --bg:#f2f4f8; --surface:#fff; --border:#e3e7ee; --text:#1a2233; --dim:#68738a;
+  --brand:#1668dc; --radius:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  background:var(--bg);color:var(--text);padding:36px 32px 60px}
+.wrap{max-width:1240px;margin:0 auto}
+header{margin-bottom:26px}
+header h1{font-size:22px;font-weight:750;letter-spacing:.2px}
+header p{font-size:13px;color:var(--dim);margin-top:6px;max-width:760px}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}
+@media (max-width:900px){.grid{grid-template-columns:1fr}}
+.opt{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;
+  box-shadow:0 1px 2px rgba(15,23,42,.04),0 8px 24px rgba(11,37,69,.05);display:flex;flex-direction:column}
+.shot{position:relative;height:300px;overflow:hidden;background:#0d1117;cursor:pointer;border-bottom:1px solid var(--border)}
+.shot iframe{width:1500px;height:940px;border:0;transform:scale(0.405);transform-origin:0 0;pointer-events:none}
+.shot .open-hint{position:absolute;right:10px;bottom:10px;font-size:11px;color:#fff;background:rgba(10,16,28,.55);
+  padding:3px 10px;border-radius:999px;backdrop-filter:blur(6px)}
+.info{padding:16px 18px 14px}
+.info .head{display:flex;align-items:center;gap:10px}
+.badge{width:30px;height:30px;border-radius:9px;color:#fff;display:flex;align-items:center;justify-content:center;
+  font-size:14px;font-weight:800;flex:none}
+.info h2{font-size:16px;font-weight:700}
+.info .theme{font-size:11px;font-weight:600;padding:2px 9px;border-radius:999px;margin-left:auto}
+.theme.light{background:#e8f1fd;color:#1668dc}
+.theme.dark{background:#ece9fd;color:#6d4de0}
+.info ul{margin:10px 0 0;padding-left:2px;list-style:none;font-size:12.5px;color:var(--dim);display:grid;gap:4px}
+.info ul li::before{content:"·";color:var(--brand);font-weight:800;margin-right:7px}
+.foot{display:flex;gap:10px;padding:0 18px 16px}
+.foot a{flex:1;text-align:center;text-decoration:none;font-size:12.5px;font-weight:600;padding:8px 0;border-radius:9px;
+  border:1px solid var(--border);color:var(--text);transition:all .15s}
+.foot a:hover{border-color:var(--brand);color:var(--brand);background:#f5f9ff}
+.legacy{margin-top:26px;background:var(--surface);border:1px dashed #c9d4e5;border-radius:var(--radius);
+  padding:16px 18px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.legacy .t{font-size:13px;font-weight:650}
+.legacy .s{font-size:12px;color:var(--dim)}
+.legacy a{margin-left:auto;font-size:12.5px;font-weight:600;color:var(--brand);text-decoration:none;
+  border:1px solid var(--border);padding:7px 16px;border-radius:9px}
+.legacy a:hover{border-color:var(--brand)}
+.combo{display:flex;align-items:center;gap:14px;background:linear-gradient(135deg,#1668dc,#3f8ff0);color:#fff;
+  border-radius:var(--radius);padding:15px 20px;margin-bottom:22px;text-decoration:none;
+  box-shadow:0 4px 14px rgba(22,104,220,.25);transition:transform .15s,box-shadow .15s}
+.combo:hover{transform:translateY(-1px);box-shadow:0 8px 22px rgba(22,104,220,.32)}
+.combo .ct{font-size:14.5px;font-weight:750}
+.combo .cs{font-size:12px;color:rgba(255,255,255,.85);margin-top:3px}
+.combo .go{margin-left:auto;flex:none;border:1px solid rgba(255,255,255,.55);padding:8px 16px;border-radius:9px;
+  font-size:12.5px;font-weight:600;color:#fff}
+.combo:hover .go{background:rgba(255,255,255,.14)}
+.hint{margin-top:18px;font-size:12px;color:var(--dim);text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>AFE 界面重构 · 4 个设计方向</h1>
+    <p>同一信息架构（设备资源 / 远程机器 / 文件浏览 / 设置）+ 真实业务模拟数据，仅视觉与布局风格不同。下方为缩放实况预览，点击画面或「在新窗口打开」进入完整交互版（支持页内导航、表格排序、筛选、开关等）。确认方向后再落地到 React 工程。</p>
+  </header>
+
+  <a class="combo" href="preview-all.html" target="_blank">
+    <div>
+      <div class="ct">★ 四合一实况切换 · preview-all.html</div>
+      <div class="cs">同一页面、同一份数据，右下角「界面风格」按钮一键切换 A / B / C / D 四种风格（快捷键 1–4），换肤不换内容，横向对比最直观。</div>
+    </div>
+    <span class="go">打开 ↗</span>
+  </a>
+
+  <div class="grid">
+    <!-- A -->
+    <div class="opt">
+      <div class="shot" onclick="window.open('preview-a-blue.html')">
+        <iframe src="preview-a-blue.html" title="方案 A" loading="lazy" tabindex="-1"></iframe>
+        <span class="open-hint">点击在新窗口打开</span>
+      </div>
+      <div class="info">
+        <div class="head">
+          <span class="badge" style="background:linear-gradient(135deg,#1668dc,#3f8ff0)">A</span>
+          <h2>蔚蓝科技 · 浅色专业</h2>
+          <span class="theme light">浅色</span>
+        </div>
+        <ul>
+          <li>现有 AntD 浅色实现的平滑演进，主色 #1668dc，迁移成本最低</li>
+          <li>208px 可折叠侧栏（替代现有 96px 图标栏）+ 白卡片 + 蓝色渐变 hero</li>
+          <li>CPU / 内存用环形仪表，存储用双色进度条，信息层次完整</li>
+        </ul>
+      </div>
+      <div class="foot"><a href="preview-a-blue.html" target="_blank">在新窗口打开 ↗</a></div>
+    </div>
+
+    <!-- B -->
+    <div class="opt">
+      <div class="shot" onclick="window.open('preview-b-glass.html')">
+        <iframe src="preview-b-glass.html" title="方案 B" loading="lazy" tabindex="-1"></iframe>
+        <span class="open-hint">点击在新窗口打开</span>
+      </div>
+      <div class="info">
+        <div class="head">
+          <span class="badge" style="background:linear-gradient(135deg,#8B6BFF,#6A48E8)">B</span>
+          <h2>夜色玻璃 · 暗色玻璃拟态</h2>
+          <span class="theme dark">深色</span>
+        </div>
+        <ul>
+          <li>深空底色 + 双光晕 + 半透明玻璃卡片（blur 14px），紫色霓虹主色</li>
+          <li>徽章自带光点发光、呼吸状态灯，监控大屏气质最强</li>
+          <li>视觉冲击力高；长时间盯表可读性略逊于 A / C</li>
+        </ul>
+      </div>
+      <div class="foot"><a href="preview-b-glass.html" target="_blank">在新窗口打开 ↗</a></div>
+    </div>
+
+    <!-- C -->
+    <div class="opt">
+      <div class="shot" onclick="window.open('preview-c-minimal.html')">
+        <iframe src="preview-c-minimal.html" title="方案 C" loading="lazy" tabindex="-1"></iframe>
+        <span class="open-hint">点击在新窗口打开</span>
+      </div>
+      <div class="info">
+        <div class="head">
+          <span class="badge" style="background:#18181b">C</span>
+          <h2>极简工作台 · Linear 风</h2>
+          <span class="theme light">浅色</span>
+        </div>
+        <ul>
+          <li>大量留白、细边框、零阴影零渐变；黑色主按钮 + 蓝色仅作选中态</li>
+          <li>顶部细横条 + 窄侧栏；徽章退化为「点 + 文字」，指标纯文本</li>
+          <li>最克制耐看，适合长时间操作型工具；个性化最弱</li>
+        </ul>
+      </div>
+      <div class="foot"><a href="preview-c-minimal.html" target="_blank">在新窗口打开 ↗</a></div>
+    </div>
+
+    <!-- D -->
+    <div class="opt">
+      <div class="shot" onclick="window.open('preview-d-console.html')">
+        <iframe src="preview-d-console.html" title="方案 D" loading="lazy" tabindex="-1"></iframe>
+        <span class="open-hint">点击在新窗口打开</span>
+      </div>
+      <div class="info">
+        <div class="head">
+          <span class="badge" style="background:#1f6feb">D</span>
+          <h2>运维控制台 · 深色高密度</h2>
+          <span class="theme dark">深色</span>
+        </div>
+        <ul>
+          <li>GitHub Dark 式深灰 + 紧凑行距（36px 行高），一屏容纳更多设备</li>
+          <li>等宽字体呈现数字 / UID / 路径，状态点灯 + 采样时钟，专业运维质感</li>
+          <li>设备农场监控场景下信息密度最高</li>
+        </ul>
+      </div>
+      <div class="foot"><a href="preview-d-console.html" target="_blank">在新窗口打开 ↗</a></div>
+    </div>
+  </div>
+
+  <div class="legacy">
+    <div>
+      <div class="t">旧版提案 · optimized-ui.html</div>
+      <div class="s">此前制作的单文件双主题预览稿（蔚蓝科技 / 夜色玻璃可切换），仍可作参照。</div>
+    </div>
+    <a href="optimized-ui.html" target="_blank">打开旧版 ↗</a>
+  </div>
+
+  <div class="hint">提示：也可直接双击各 HTML 文件离线打开；本目录不修改工程内任何文件。</div>
+</div>
+</body>
+</html>
