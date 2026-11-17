@@ -6,7 +6,7 @@
 
 | 操作 | 命令 / 双击 | 说明 |
 | --- | --- | --- |
-| 首次安装 | 双击 `scripts\setup.cmd` | 创建 `.venv`、装后端依赖、`npm ci`、跑环境自检 |
+| 首次安装 | 双击 `scripts\setup.cmd` | 创建 `.venv`、装后端依赖、装前端依赖、跑环境自检 |
 | 后台启动 | 双击 `scripts\start.cmd` | 后端 `:8010` + 前端 `:10012`，日志在 `logs\`，窗口可关 |
 | 查看状态 | `scripts\start.cmd status` | 显示 PID、端口监听、访问地址 |
 | 停止服务 | 双击 `scripts\stop.cmd` | 按 PID + 子进程树结束，并兜底清理残留 |
@@ -15,6 +15,26 @@
 | 仅起后端 | `scripts\dev.cmd backend` | 跳过 Node 检查 |
 | 仅起前端 | `scripts\dev.cmd frontend` | — |
 | 跟踪日志 | `scripts\start.cmd -Tail` | 启动后持续跟踪日志，Ctrl+C 只退出跟踪、不停服务 |
+
+> 首次安装会**依次尝试** `npm ci` 与 `npm install`：仓库的 `package-lock.json`
+> 已补齐 `@esbuild/*` 各平台包，正常情况下 `npm ci` 即可成功；若本地 lock 与
+> `package.json` 不同步导致 `npm ci` 报错，脚本会自动回退到 `npm install` 并继续。
+
+### 安装前的两个前置保护
+
+| 情况 | 脚本行为 |
+| --- | --- |
+| **服务正在运行**（8010 / 10012 被占用） | 直接中止并提示先执行 `.\scripts\stop.cmd`。前端 dev server 会占用 `node_modules\@esbuild\win32-x64\esbuild.exe`，此时安装会失败于 `EPERM: unlink` |
+| **`node_modules` 残留半成品** | 安装前先删除 `frontend\node_modules` 再装。Windows 上 npm 反复在同一目录操作会留下残缺目录，导致后续安装报 `ENOTEMPTY` / `TAR_ENTRY_ERROR` 并装出**不完整**的依赖树（`vite.js`、`esbuild.exe` 缺失，vitest 直接失败） |
+
+安装完成后脚本会**校验关键文件**（`vite/bin/vite.js`、`@esbuild/win32-x64/esbuild.exe`、
+`react/package.json`）是否就位；缺任一项即报错退出，不会把残缺环境交出去。
+
+> 占用检查的端口与 `start.ps1` 口径一致：默认 `8010` / `10012`，
+> 若设置了 `SERVER_PORT` / `FRONTEND_PORT` 环境变量，守卫同样按新端口判断。
+>
+> 若 `node_modules` 删不掉（通常是被编辑器、杀毒软件或残留进程占用），
+> 脚本会**中止并说明原因**，而不是继续装出残缺依赖。
 
 PowerShell 直接调用（无需 `.cmd`）：
 
@@ -40,11 +60,30 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check-env.ps1 -BackendOnly
 | --- | --- | --- |
 | `.venv/bin/python` | `.venv\Scripts\python.exe` | venv 目录名不同 |
 | `nohup ... &` + `$!` | `Start-Process -PassThru` + `.pid` 文件 | Windows 无 `nohup` / `$!` |
-| `pkill -f` | `taskkill /PID /T /F` + `Get-CimInstance` 命令行匹配 | 按 PID 精确结束，兜底按命令行过滤本工程 |
+| `pkill -f` | `taskkill /PID /T /F` + `Get-CimInstance` 命令行匹配 | 按 PID 精确结束；兜底只处理**进程名为 `node.exe` / `python.exe` / `pythonw.exe`** 且命令行指向本工程的进程，避免误杀 IDE 与宿主应用 |
 | `/dev/tcp` 探端口 | `[System.Net.Sockets.TcpClient]::BeginConnect` | 400ms 超时，不挂起 |
 | `source nvm.sh && nvm use 22` | 直接用 PATH 里的 `node` / `npm.cmd` | Windows 无 nvm；要求 Node 20+ |
 | `timeout 5 adb version` | `Start-Process` + `WaitForExit(5000)` | 避免 adb 挂死 |
 | `tail -30` | `Get-Content -Tail 30` | — |
+| 直接调 `pip install` | `Invoke-Native` 包装 + pip 源三级回退 | 见下节 |
+
+## 依赖安装的源回退
+
+`setup.ps1` 装 Python 依赖时按顺序尝试三个源，任一成功即停：
+
+| 顺序 | 源 | 参数 |
+| --- | --- | --- |
+| 1 | 默认源 | 无额外参数 |
+| 2 | 阿里云镜像 | `-i http://mirrors.aliyun.com/pypi/simple/ --trusted-host mirrors.aliyun.com` |
+| 3 | 清华镜像 | `-i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn` |
+
+**为什么需要回退**：部分企业网络 / 代理会打断 pip 的 TLS 握手，报
+`SSLError: EOF occurred in violation of protocol`（此时 `curl https://pypi.org` 却是通的，
+因为 curl 走的是系统 TLS 栈）。脚本会打印每个源的尝试结果，失败自动换下一个，
+三个源全失败才会报错退出。`pip install --upgrade pip` 失败**不会**中断安装流程。
+
+> 排障提示：若日志里全是 `SSLError`，走 HTTP 镜像（回退源 2）通常即可解决；
+> 脚本已内置该回退，无需手工指定 `-i`。
 
 ## 环境变量覆盖
 
