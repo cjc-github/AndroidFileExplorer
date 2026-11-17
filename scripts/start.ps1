@@ -94,10 +94,13 @@ function Stop-ByPid ([int]$Id) {
 }
 
 function Stop-ScopedProcesses {
-    # 兜底：按命令行匹配清理本工程启动的残留进程，不误杀其它工程。
+    # 兜底清理：只认「进程名属于 node/python 系」且命令行明确指向本工程的服务进程。
+    # 不加进程名限制会误杀 IDE / 宿主应用（它们的命令行里也可能出现 vite 或工程路径）。
+    $allowedNames = @('node.exe', 'python.exe', 'pythonw.exe')
     $owned = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
         $cl = $_.CommandLine
         if (-not $cl) { return $false }
+        if ($allowedNames -notcontains $_.Name.ToLowerInvariant()) { return $false }
         $isBackend = $cl -match 'app\.main' -and $cl -match [regex]::Escape($Root)
         # 只认 vite 的 node 进程；不要匹配宽泛的 npm，否则会误杀同工程的 npm test / npm install
         $isVite = $cl -match 'vite' -and $cl -match '--port' -and $cl -match [regex]::Escape([string]$frontendPort)

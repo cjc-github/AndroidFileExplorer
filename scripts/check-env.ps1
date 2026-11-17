@@ -42,10 +42,13 @@ Write-Host ''
 # ---- Python venv ----
 $venvPy = Find-VenvPython
 if ($venvPy) {
-    $pyVer = (& $venvPy -c 'import sys; print(".".join(map(str, sys.version_info[:3])))' 2>$null | Select-Object -First 1)
+    # 用 -V 取版本：比 `-c "print(...)"` 在 Windows PowerShell 5.1 下更稳定
+    # （后者会把 stdout 与 stderr 合并，版本串可能取不到）
+    $pyVer = ((& $venvPy -V 2>&1) | Select-Object -First 1)
+    if (-not $pyVer) { $pyVer = '未知' }
     & $venvPy -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,10) else 1)' 2>$null | Out-Null
-    if ($LASTEXITCODE -eq 0) { Write-Ok "Python $pyVer  ($venvPy)" }
-    else { Write-Fail "Python $pyVer 版本过低，需要 3.10+；重建：py -3 -m venv .venv" }
+    if ($LASTEXITCODE -eq 0) { Write-Ok "$pyVer  ($venvPy)" }
+    else { Write-Fail "$pyVer 版本过低，需要 3.10+；重建：py -3 -m venv .venv" }
 } else {
     Write-Fail '缺少虚拟环境：执行 .\scripts\setup.ps1，或 py -3 -m venv .venv 后安装依赖'
 }
