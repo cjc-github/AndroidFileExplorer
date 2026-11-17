@@ -37,19 +37,58 @@ if (-not (Test-Path -LiteralPath $venvPy)) {
 }
 
 # ---- 2. 后端依赖 ----
+# pip 在部分网络环境（企业代理 / TLS 中间设备）下会报 SSLError，
+# 因此按「默认源 → HTTP 镜像 + trusted-host」逐级回退，不因单源失败就中断。
+$PIP_INDEX_FALLBACKS = @(
+    @{ Name = '默认源';     Args = @() },
+    @{ Name = '阿里云镜像'; Args = @('-i', 'http://mirrors.aliyun.com/pypi/simple/', '--trusted-host', 'mirrors.aliyun.com') },
+    @{ Name = '清华镜像';   Args = @('-i', 'https://pypi.tuna.tsinghua.edu.cn/simple', '--trusted-host', 'pypi.tuna.tsinghua.edu.cn') }
+)
+
+function Invoke-Native {
+    # 包装原生命令：合并 stdout/stderr、保留退出码，且不让 stderr 触发 ErrorActionPreference=Stop
+    param([string]$Exe, [string[]]$NativeArgs)
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $out = & $Exe @NativeArgs 2>&1
+        $code = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $prev
+    }
+    foreach ($line in $out) { Write-Host $line }
+    return $code
+}
+
+Write-Step '升级 pip …'
+$pipUpgraded = $false
+foreach ($idx in $PIP_INDEX_FALLBACKS) {
+    Write-Step ("  尝试 pip 源：{0}" -f $idx.Name)
+    $code = Invoke-Native $venvPy (@('-m', 'pip', 'install', '--upgrade', 'pip', '--disable-pip-version-check') + $idx.Args)
+    if ($code -eq 0) { $pipUpgraded = $true; break }
+    Write-Step ("  {0} 不可用（退出码 {1}），切换下一个源" -f $idx.Name, $code)
+}
+if (-not $pipUpgraded) { Write-Step 'pip 升级未成功，继续使用现有 pip 安装依赖（不中断）' }
+
 Write-Step '安装后端 Python 依赖 …'
-& $venvPy -m pip install --upgrade pip 2>&1 | Out-Host
-& $venvPy -m pip install -r (Join-Path $Root 'backend\requirements.txt') 2>&1 | Out-Host
-if ($LASTEXITCODE -ne 0) { throw '后端依赖安装失败' }
+$reqFile = Join-Path $Root 'backend\requirements.txt'
+$installed = $false
+foreach ($idx in $PIP_INDEX_FALLBACKS) {
+    Write-Step ("  尝试 pip 源：{0}" -f $idx.Name)
+    $code = Invoke-Native $venvPy (@('-m', 'pip', 'install', '-r', $reqFile, '--disable-pip-version-check') + $idx.Args)
+    if ($code -eq 0) { $installed = $true; break }
+    Write-Step ("  {0} 安装失败（退出码 {1}），切换下一个源" -f $idx.Name, $code)
+}
+if (-not $installed) { throw '后端依赖安装失败（所有 pip 源均不可用）' }
 
 # ---- 3. 前端依赖 ----
 Write-Step '安装前端 Node 依赖 …'
 $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
 if (-not $npm) { throw '未找到 npm，请先安装 Node.js 20+' }
-& $npm.Source ci --prefix (Join-Path $Root 'frontend') 2>&1 | Out-Host
-if ($LASTEXITCODE -ne 0) {
+$npmCode = Invoke-Native $npm.Source (@('ci', '--prefix', (Join-Path $Root 'frontend')))
+if ($npmCode -ne 0) {
     Write-Step 'npm ci 失败，回退到 npm install …'
-    & $npm.Source install --prefix (Join-Path $Root 'frontend') 2>&1 | Out-Host
+    Invoke-Native $npm.Source (@('install', '--prefix', (Join-Path $Root 'frontend'))) | Out-Null
 }
 
 # ---- 4. 环境自检 ----
