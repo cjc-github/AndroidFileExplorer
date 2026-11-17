@@ -18,7 +18,7 @@ import pytest
 from app.transports.local_adb import LocalAdbTransport
 
 
-FAKE_ADB = """#!/bin/bash
+FAKE_ADB_SH = """#!/bin/bash
 case "$*" in
   "devices -l")
     echo "List of devices attached"
@@ -34,11 +34,33 @@ case "$*" in
 esac
 """
 
+FAKE_ADB_CMD = """@echo off
+echo %* | findstr /C:"devices" >nul
+if not errorlevel 1 (
+  echo List of devices attached
+  echo FAKE123	device product:fake model:Fake_X device:fake transport_id:1
+  exit /b 0
+)
+echo FAKE-OK: %*
+"""
+
 
 @pytest.fixture
 def fake_adb(tmp_path) -> str:
+    """A fake ``adb`` executable for the current platform.
+
+    The local transport spawns adb as a plain executable (no shell), so the
+    fixture has to provide something Windows can run: a bash script raises
+    ``WinError 193`` there.  A ``.cmd`` file is launched through ``cmd.exe``
+    by ``subprocess`` on Windows, so it works without a shell wrapper.
+    """
+    if os.name == "nt":
+        path = tmp_path / "adb.cmd"
+        path.write_text(FAKE_ADB_CMD, encoding="utf-8")
+        return str(path)
+
     path = tmp_path / "adb"
-    path.write_text(FAKE_ADB, encoding="utf-8")
+    path.write_text(FAKE_ADB_SH, encoding="utf-8")
     path.chmod(path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
     return str(path)
 
