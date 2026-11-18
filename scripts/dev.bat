@@ -1,4 +1,8 @@
 @echo off
+rem AndroidFileExplorer dev launcher - run backend + frontend in the foreground.
+rem Ctrl+C stops both services; logs stream straight to this console.
+rem Also accepts "dev.bat backend" or "dev.bat frontend" for single-service mode.
+rem Implementation lives in dev.ps1; this is the native double-click entry.
 chcp 65001 >nul
 setlocal
 cd /d "%~dp0.."
