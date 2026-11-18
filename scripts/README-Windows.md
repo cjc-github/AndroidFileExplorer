@@ -6,15 +6,16 @@
 
 | 操作 | 命令 / 双击 | 说明 |
 | --- | --- | --- |
-| 首次安装 | 双击 `scripts\setup.cmd` | 创建 `.venv`、装后端依赖、装前端依赖、跑环境自检 |
-| 后台启动 | 双击 `scripts\start.cmd` | 后端 `:8010` + 前端 `:10012`，日志在 `logs\`，窗口可关 |
-| 查看状态 | `scripts\start.cmd status` | 显示 PID、端口监听、访问地址 |
-| 停止服务 | 双击 `scripts\stop.cmd` | 按 PID + 子进程树结束，并兜底清理残留 |
-| 重启 | `scripts\start.cmd restart` | 先停后起 |
-| 前台开发 | 双击 `scripts\dev.cmd` | Ctrl+C 同时停掉前后端，日志直接可见 |
-| 仅起后端 | `scripts\dev.cmd backend` | 跳过 Node 检查 |
-| 仅起前端 | `scripts\dev.cmd frontend` | — |
-| 跟踪日志 | `scripts\start.cmd -Tail` | 启动后持续跟踪日志，Ctrl+C 只退出跟踪、不停服务 |
+| 首次安装 | 双击 scripts\setup.bat | 创建 .venv、装后端依赖、装前端依赖、跑环境自检 |
+| 环境自检 | 双击 scripts\check-env.bat | 检查 Python / 后端依赖 / Node / adb，输出 [ok]/[warn]/[fail] |
+| 后台启动 | 双击 `scripts\start.bat` | 后端 `:8010` + 前端 `:10012`，日志在 `logs\`，窗口可关 |
+| 查看状态 | `scripts\start.bat status` | 显示 PID、端口监听、访问地址 |
+| 停止服务 | 双击 `scripts\stop.bat` | 按 PID + 子进程树结束，并兜底清理残留 |
+| 重启 | `scripts\start.bat restart` | 先停后起 |
+| 前台开发 | 双击 `scripts\dev.bat` | Ctrl+C 同时停掉前后端，日志直接可见 |
+| 仅起后端 | `scripts\dev.bat backend` | 跳过 Node 检查 |
+| 仅起前端 | `scripts\dev.bat frontend` | — |
+| 跟踪日志 | `scripts\start.bat -Tail` | 启动后持续跟踪日志，Ctrl+C 只退出跟踪、不停服务 |
 
 > 首次安装会**依次尝试** `npm ci` 与 `npm install`：仓库的 `package-lock.json`
 > 已补齐 `@esbuild/*` 各平台包，正常情况下 `npm ci` 即可成功；若本地 lock 与
@@ -24,7 +25,7 @@
 
 | 情况 | 脚本行为 |
 | --- | --- |
-| **服务正在运行**（8010 / 10012 被占用） | 直接中止并提示先执行 `.\scripts\stop.cmd`。前端 dev server 会占用 `node_modules\@esbuild\win32-x64\esbuild.exe`，此时安装会失败于 `EPERM: unlink` |
+| **服务正在运行**（8010 / 10012 被占用） | 直接中止并提示先执行 `.\scripts\stop.bat`。前端 dev server 会占用 `node_modules\@esbuild\win32-x64\esbuild.exe`，此时安装会失败于 `EPERM: unlink` |
 | **`node_modules` 残留半成品** | 安装前先删除 `frontend\node_modules` 再装。Windows 上 npm 反复在同一目录操作会留下残缺目录，导致后续安装报 `ENOTEMPTY` / `TAR_ENTRY_ERROR` 并装出**不完整**的依赖树（`vite.js`、`esbuild.exe` 缺失，vitest 直接失败） |
 
 安装完成后脚本会**校验关键文件**（`vite/bin/vite.js`、`@esbuild/win32-x64/esbuild.exe`、
@@ -36,7 +37,7 @@
 > 若 `node_modules` 删不掉（通常是被编辑器、杀毒软件或残留进程占用），
 > 脚本会**中止并说明原因**，而不是继续装出残缺依赖。
 
-PowerShell 直接调用（无需 `.cmd`）：
+PowerShell 直接调用（无需 `.bat`）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1
@@ -102,7 +103,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\check-env.ps1 -BackendOnly
 
 | 组件 | 要求 | 缺失表现 |
 | --- | --- | --- |
-| Python | 3.10+ | `setup.cmd` 会创建 `.venv` 并安装依赖 |
+| Python | 3.10+ | `setup.bat` 会创建 `.venv` 并安装依赖 |
 | Node.js | 20+ | 前端无法启动；`check-env.ps1` 报 `[fail]` |
 | adb | 可选 | 仅影响本机设备发现，远程机器仍可用；报 `[warn]` |
 | asyncssh | 可选 | SSH 直连不可用，agent 接入不受影响；报 `[warn]` |
@@ -123,9 +124,9 @@ logs\
 
 ## 执行策略说明
 
-Windows 默认可能禁止运行未签名的 `.ps1`。所有 `.cmd` 包装都带
+Windows 默认可能禁止运行未签名的 `.ps1`。所有 `.bat` 包装都带
 `-ExecutionPolicy Bypass`，**只作用于该次调用**，不修改系统策略。
-双击 `.cmd` 即可，无需手动 `Set-ExecutionPolicy`。
+双击 `.bat` 即可，无需手动 `Set-ExecutionPolicy`。
 
 所有 `.ps1` 均保存为 **UTF-8 with BOM**：Windows PowerShell 5.1 会把无 BOM 的
 UTF-8 文件按系统 ANSI/GBK 解码，导致中文字符串里的引号被乱码字节打断、脚本
@@ -134,5 +135,5 @@ UTF-8 文件按系统 ANSI/GBK 解码，导致中文字符串里的引号被乱�
 
 ## 预览稿入口
 
-`ui-preview\打开预览.cmd` 双击即可在默认浏览器打开静态 UI 提案稿
+`ui-preview\打开预览.bat` 双击即可在默认浏览器打开静态 UI 提案稿
 （`optimized-ui.html`），不依赖 Node / Python / 后端服务。

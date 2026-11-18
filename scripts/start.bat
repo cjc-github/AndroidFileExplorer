@@ -6,7 +6,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0start.ps1" %*
 set "CODE=%ERRORLEVEL%"
 if not "%CODE%"=="0" (
   echo.
-  echo [afe] ????? %CODE%??????????
+  echo [afe] Command exited with code %CODE%. Check logs\ for details.
   pause >nul
 )
 endlocal & exit /b %CODE%

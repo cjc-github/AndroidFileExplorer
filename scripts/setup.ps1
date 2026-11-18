@@ -44,7 +44,7 @@ if ($busyPorts.Count -gt 0) {
     Write-Host '       前端 dev server 会占用 node_modules 里的 esbuild.exe，' -ForegroundColor Yellow
     Write-Host '       此时安装依赖会失败（EPERM: unlink）。请先停止服务再安装：' -ForegroundColor Yellow
     Write-Host ''
-    Write-Host '       .\scripts\stop.cmd          # 或 .\scripts\start.ps1 stop' -ForegroundColor Cyan
+    Write-Host '       .\scripts\stop.bat          # 或 .\scripts\start.ps1 stop' -ForegroundColor Cyan
     Write-Host ''
     exit 1
 }
@@ -164,7 +164,7 @@ if ($LASTEXITCODE -ne 0) { throw '环境自检未通过，请按上面的 [fail]
 
 Write-Host ''
 Write-Step '安装完成。启动方式：'
-Write-Host '  后台启动: .\scripts\start.cmd'
-Write-Host '  前台开发: .\scripts\dev.cmd'
-Write-Host '  停止服务: .\scripts\start.cmd stop'
+Write-Host '  后台启动: .\scripts\start.bat'
+Write-Host '  前台开发: .\scripts\dev.bat'
+Write-Host '  停止服务: .\scripts\start.bat stop'
 Write-Host ''
