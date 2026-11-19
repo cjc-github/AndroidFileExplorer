@@ -121,8 +121,3 @@ logs\
 所有 `.bat` 开头都执行 `chcp 65001`，并在保存时使用 **UTF-8 无 BOM**。
 `.bat` 本身不支持 BOM（会把首行 `@echo off` 变成非法命令），因此不要用会给
 批处理加 BOM 的编辑器重存；中文提示依赖 `chcp 65001` 生效后的控制台代码页。
-
-## 预览稿入口
-
-`ui-preview\打开预览.bat` 双击即可在默认浏览器打开静态 UI 提案稿
-（`optimized-ui.html`），不依赖 Node / Python / 后端服务。

@@ -275,8 +275,7 @@ AndroidFileExplorer/
 │   ├── DEVELOPMENT-STANDARDS.md  开发标准与迭代准则（每条都有真实出处）
 │   ├── TECHNICAL_IMPLEMENTATION.md  技术实现方案（模块 / 链路 / 关键决策）
 │   ├── AGENT.md            设备侧 agent 使用与运维指南
-│   ├── api-contract.md     HTTP 契约
-│   └── 20261112-界面功能不足与修复清单.md  本轮界面/功能修复清单
+│   └── api-contract.md     HTTP 契约
 ├── agent/                   设备侧代理（仅标准库 + adb，可单独部署）
 ├── backend/                FastAPI + SQLModel
 │   ├── app/

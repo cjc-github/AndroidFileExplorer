@@ -129,7 +129,6 @@ AndroidFileExplorer/
 | 单元 + 集成 | `cd backend && ../.venv/bin/python -m pytest -q` | **34 passed** |
 | 端到端（TestClient） | `../.venv/bin/python scripts/e2e_demo.py` | 全部通过 |
 | 端到端（真实 uvicorn + 真实 HTTP） | `../.venv/bin/python scripts/live_server_check.py` | 全部通过 |
-| 前端 ↔ 后端联调（vite 代理） | `../.venv/bin/python scripts/frontend_live_check.py` | 全部通过 |
 | 前端类型检查 + 生产构建 | `cd frontend && npm run build` | `tsc -b` + `vite build` 通过 |
 
 本 sprint 修复的 6 个真实缺陷（均已固化为回归测试）：
