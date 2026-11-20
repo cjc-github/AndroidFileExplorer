@@ -9,7 +9,7 @@
     "type-check": "tsc --noEmit",
     "test": "vitest run",
     "preview": "vite preview",
-    "render-check": "bash ../scripts/render-check.sh http://127.0.0.1:10012/"
+    "render-check": "bash ../scripts/render-check.sh"
   },
   "dependencies": {
     "@ant-design/icons": "^5.6.1",

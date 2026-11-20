@@ -1,7 +1,7 @@
 # 功能点实现清单
 
 > 以真机验证与自动化测试为勾选依据。每个 ✓ 都有对应的验证记录：
-> 真机（192.168.114.130 / emulator-5554）、`pytest`（192 passed）、前端 `vitest`（26 passed）
+> 真机（192.168.114.130 / emulator-5554）、`pytest`（200 passed）、前端 `vitest`（26 passed）
 > 或门禁（`scripts/verify.sh` 六步全绿）。
 > 未勾选项为已知的待实现功能，按优先级排列。
 
@@ -142,7 +142,7 @@
 
 ## 六、质量保障
 
-- [x] 后端单元 + 集成测试（192 passed，28 个测试文件）
+- [x] 后端单元 + 集成测试（200 passed，28 个测试文件）
 - [x] 前端单元测试（vitest + happy-dom，26 用例：格式化工具 / 请求层错误提取 / `?token=` 引导 / ErrorBoundary / 表格高度扣除 hook）
 - [x] 真实 uvicorn + 真实 HTTP 的端到端检查（`live_server_check`）
 - [x] 真实浏览器逐页渲染检查（`render-check`，Chrome headless DOM 断言）
@@ -179,7 +179,7 @@
 |---|---|---|
 | 环境自检 | `GET /api/v1/system/check` + 设置页真实浏览器渲染 | 通过 |
 | 渲染门禁 | `scripts/render-check.sh` | 5 页 50 项断言全 PASS |
-| 带设备渲染 | `scripts/render_check_with_device.py` | 5 页 54 项断言全 PASS |
+| 带设备渲染 | `backend/scripts/render_check_with_device.py` | 5 页 54 项断言全 PASS |
 | 门禁 | `scripts/verify.sh` 六步 | 6/6 |
 
 ### 交付前实测记录（2026-11-13 · 四页满屏与表格高度）

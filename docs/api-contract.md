@@ -171,6 +171,27 @@ GET /api/v1/devices/{uid}/files/download?path=/sdcard/a.bin&token=<token>
 
 探测失败返回 **502**，且该机器的 `status` 置为 `error`、`last_error` 记录原因。
 
+### `POST /api/v1/engines/{engine_id}/adb-connect`
+
+在指定机器上执行 `adb connect <ip>:<port>`，用于接入**平台还没见过**的网络设备
+（手机先开 `adb tcpip 5555`，再从这里填 IP 接入）。成功后立即同步一次设备清单，
+新设备马上出现在设备列表里。
+
+```json
+{ "ip": "192.168.1.50", "port": 5555 }
+```
+
+```json
+{
+  "code": 200,
+  "data": { "engine_id": 2, "serial": "192.168.1.50:5555" },
+  "message": "已连接 192.168.1.50:5555"
+}
+```
+
+连接失败返回 **400**，`detail` 带上 `adb connect` 的原始输出，便于区分「拒绝」
+（adbd 未处于 tcpip 模式）与「超时」（IP 不对）。机器不存在返回 **404**。
+
 ### `DELETE /api/v1/engines/{engine_id}`
 
 删除机器**及其名下的设备记录**。本机（`kind=local`）不可删除，返回 **400**。
@@ -181,15 +202,17 @@ GET /api/v1/devices/{uid}/files/download?path=/sdcard/a.bin&token=<token>
 
 对应界面：**设备资源管理** `/devices`。
 
-### `GET /api/v1/devices?refresh={true|false}&page={n}&page_size={n}&keyword={kw}&sort_by={field}&sort_order={asc|desc}`
+### `GET /api/v1/devices?refresh={true|false}&page={n}&page_size={n}&keyword={kw}&sort_by={field}&sort_order={asc|desc}&engine_id={id}`
 
 - `refresh=true`：先从本机与所有远程机器同步一次设备清单，再返回。
 - `refresh=false`（默认）：直接返回注册表中的已知设备。
 - `page`：页码（从 1 开始）。**传入时分页返回**，未传入时保持旧版全量数组。
 - `page_size`：每页条数，默认 20，最大 200。
 - `keyword`：按名称 / 型号 / 序列号 / UID / 品牌在**全量设备**中过滤，仅分页模式生效。
+- `engine_id`：只返回该机器名下的设备，仅分页模式生效。
 - `sort_by`：`device` / `uid` / `status` / `last_seen`，服务端按全量数据排序。
 - `sort_order`：`asc` / `desc`，默认 `desc`。
+- 排序时空值（如从未上线的 `last_seen`）恒排在最后，不因 `asc` 翻到最前。
 - 分页模式只对当前页设备采集 CPU / 内存 / 存储指标，避免设备多时轮询压力过大。
 
 分页响应：

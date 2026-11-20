@@ -31,6 +31,10 @@ Android 设备文件资源 / 文件管理能力：**远程机器连接配置**�
 ./scripts/dev.sh            # 前台启动（Ctrl+C 退出）
 ```
 
+Windows 上使用同目录的 `.bat`（双击即可，无需 PowerShell）：`setup.bat` 首次安装、
+`check-env.bat` 环境自检、`start.bat` 后台启动 / `stop.bat` 停止、`dev.bat` 前台开发。
+完整说明见 [scripts/README-Windows.md](scripts/README-Windows.md)。
+
 ## 三个界面 + 平台设置
 
 ### 1. 远程机器连接配置 `/machines`
@@ -285,8 +289,8 @@ AndroidFileExplorer/
 │   │   ├── api/request_id.py  请求 ID 中间件（X-Request-ID）
 │   │   ├── api/routes/     devices / files / engines / settings / system
 │   │   └── main.py
-│   ├── scripts/            e2e_demo / live_server_check / render_check_with_device / real_device_check
-│   └── tests/              192 个 pytest 用例
+│   ├── scripts/            e2e_demo / live_server_check / render_check_with_device / real_device_check / deploy_agent / stop_agent
+│   └── tests/              200 个 pytest 用例
 ├── frontend/               Vite + React 19 + antd 5 + TanStack Query + TanStack Router
 │   └── src/
 │       ├── api/            类型 + 请求封装（含 token 引导）
@@ -308,7 +312,9 @@ AndroidFileExplorer/
     ├── render-check.sh     真实浏览器逐页渲染检查
     ├── file-browser-check.sh/.mjs  文件浏览交互检查（CDP，零依赖）
     ├── connect-remote-machine.sh   一键接入远程机器
-    └── install-agent.sh           一键部署设备侧 agent（自包含）
+    ├── install-agent.sh           一键部署设备侧 agent（自包含）
+    ├── *.bat              Windows 同名脚本（setup / check-env / start / stop / dev）
+    └── README-Windows.md  Windows 脚本使用说明
 ```
 
 ## 环境前置
@@ -348,7 +354,7 @@ cd frontend && npm install && cd ..
 
 | 步骤 | 内容 | 通过标准 |
 |---|---|---|
-| 1 | 后端单元 + 集成测试（含 agent、认证、设备标识、文件操作、root 切换、连接池、缓冲读） | 192 passed |
+| 1 | 后端单元 + 集成测试（含 agent、认证、设备标识、文件操作、root 切换、连接池、缓冲读） | 200 passed |
 | 2 | 后端端到端（TestClient） | 全部通过 |
 | 3 | 后端端到端（真实 uvicorn + 真实 HTTP） | 全部通过 |
 | 4 | 前端类型检查 + 生产构建 | `tsc -b` + `vite build` 通过 |
