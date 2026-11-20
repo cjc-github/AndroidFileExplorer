@@ -11,7 +11,7 @@ import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.logger import logger
@@ -244,7 +244,13 @@ class DeviceRegistry:
         sort_column = sort_columns.get(sort_by or "")
         if sort_column is not None:
             ordering = sort_column.asc() if sort_order == "asc" else sort_column.desc()
-            page_stmt = page_stmt.order_by(ordering.nulls_last())
+            # 不能用 ordering.nulls_last()：它生成 "ORDER BY x NULLS LAST"，
+            # 需要 SQLite >= 3.30，而 Python 3.10 在 Debian 10 / CentOS 7 等
+            # 系统上自带的 SQLite 更低，会直接报语法错误让设备列表 500。
+            # 用 CASE 打空值标记再排序，语义相同且各版本通用。
+            page_stmt = page_stmt.order_by(
+                case((sort_column.is_(None), 1), else_=0), ordering
+            )
         page_stmt = page_stmt.order_by(DeviceRecord.updated_at.desc())
         page_stmt = page_stmt.offset((page - 1) * page_size).limit(page_size)
         result = await self.db.execute(page_stmt)

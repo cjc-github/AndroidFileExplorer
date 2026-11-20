@@ -179,6 +179,69 @@ def test_device_list_paginates_and_filters(client):
     assert filtered["items"][0]["serial"] == "device-beta"
 
 
+def test_device_list_sorts_nulls_last(client):
+    """A device that was never seen has NULL last_seen.
+
+    SQLite before 3.30 has no ``NULLS LAST``, so the ordering must express
+    "nulls last" without it - otherwise this query is a 500 on old hosts.
+    """
+    transport = client.transport
+    for serial in ("seen-a", "seen-b", "never-seen"):
+        transport._devices.append(
+            DeviceEntry(serial=serial, state="device", model=serial)
+        )
+
+    async def _seed_all() -> None:
+        from datetime import datetime, timedelta
+
+        from app.models.device import DeviceRecord
+        from app.services.registry import DeviceRegistry
+
+        now = datetime.utcnow()
+        seen = {
+            "seen-a": now - timedelta(minutes=10),
+            "seen-b": now - timedelta(minutes=20),
+            # NULL: a device that was never online has no last_seen at all.
+            "never-seen": None,
+        }
+
+        async with db_session.async_session_maker() as session:
+            registry = DeviceRegistry(session)
+            # The fixture's own device is upserted too, so it gets a
+            # last_seen as well; only the three below matter here.
+            for entry in transport._devices:
+                await registry.upsert_device(transport, entry, None)
+            for serial, value in seen.items():
+                uid = build_device_uid(
+                    transport.kind, transport.endpoint, serial, None
+                )
+                record = await session.get(DeviceRecord, uid)
+                record.last_seen = value
+                session.add(record)
+            await session.commit()
+
+    run_sync(_seed_all())
+
+    # NULL last_seen must stay last in BOTH directions.
+    for order in ("asc", "desc"):
+        body = client.get(
+            "/api/v1/devices",
+            params={
+                "page": 1,
+                "page_size": 20,
+                "sort_by": "last_seen",
+                "sort_order": order,
+            },
+        )
+        assert body.status_code == 200, body.text
+        serials = [item["serial"] for item in body.json()["data"]["items"]]
+        assert set(serials) == {"emulator-5554", "seen-a", "seen-b", "never-seen"}
+        assert serials[-1] == "never-seen", serials
+        seen_order = [item for item in serials if item.startswith("seen-")]
+        expected_seen = ["seen-b", "seen-a"] if order == "asc" else ["seen-a", "seen-b"]
+        assert seen_order == expected_seen, serials
+
+
 def test_device_list_filters_by_engine(client):
     """The machines page expands one machine and only needs its devices."""
     engines = client.get("/api/v1/engines").json()["data"]
